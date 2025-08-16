@@ -403,3 +403,8 @@ FodyWeavers.xsd
 appsettings.Development.json
 appsettings.Production.json
 *.local.json
+
+# Logs
+Logs/
+logs/
+*.log

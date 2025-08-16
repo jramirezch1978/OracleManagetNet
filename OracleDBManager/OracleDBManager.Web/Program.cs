@@ -4,8 +4,35 @@ using OracleDBManager.Infrastructure.Configuration;
 using OracleDBManager.Infrastructure.Repositories;
 using OracleDBManager.Services.Implementation;
 using Microsoft.AspNetCore.Authentication.Negotiate;
+using Serilog;
+using Serilog.Events;
+
+// Configurar Serilog
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.File(
+        path: "Logs/oracle-dbmanager-.log",
+        rollingInterval: RollingInterval.Day,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext}{NewLine}{Message:lj}{NewLine}{Exception}{NewLine}",
+        fileSizeLimitBytes: 50 * 1024 * 1024, // 50MB
+        retainedFileCountLimit: 30)
+    .WriteTo.File(
+        path: "Logs/oracle-errors-.log",
+        rollingInterval: RollingInterval.Day,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext}{NewLine}{Message:lj}{NewLine}{Exception}{NewLine}",
+        restrictedToMinimumLevel: LogEventLevel.Error,
+        fileSizeLimitBytes: 50 * 1024 * 1024, // 50MB
+        retainedFileCountLimit: 90) // Mantener errores por 3 meses
+    .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Usar Serilog
+builder.Host.UseSerilog();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -28,13 +55,9 @@ builder.Services.AddSingleton(oracleConfig);
 // Registrar servicios
 builder.Services.AddScoped<ILockRepository, LockRepository>();
 builder.Services.AddScoped<ILockService, LockService>();
+builder.Services.AddScoped<IConnectionLogService, ConnectionLogService>();
 
-// Configurar logging
-builder.Services.AddLogging(config =>
-{
-    config.AddConsole();
-    config.AddDebug();
-});
+
 
 // Agregar HttpContextAccessor
 builder.Services.AddHttpContextAccessor();
@@ -73,4 +96,16 @@ app.MapRazorComponents<App>()
 // Configurar SignalR hub cuando lo implementemos
 // app.MapHub<LockHub>("/lockhub");
 
-app.Run();
+try
+{
+    Log.Information("Iniciando Oracle Database Manager Web Host");
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Host terminado inesperadamente");
+}
+finally
+{
+    Log.CloseAndFlush();
+}

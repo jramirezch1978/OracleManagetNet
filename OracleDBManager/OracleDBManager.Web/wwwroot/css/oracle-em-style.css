@@ -210,6 +210,8 @@
 .oracle-modal-body {
     margin-bottom: 20px;
     font-size: 14px;
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 .oracle-modal-footer {
