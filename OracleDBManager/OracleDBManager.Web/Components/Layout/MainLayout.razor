@@ -1,0 +1,68 @@
+﻿@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject IHttpContextAccessor HttpContextAccessor
+
+<div class="oracle-layout">
+    <header class="oracle-header">
+        <div class="container-fluid">
+            <div class="row align-items-center">
+                <div class="col">
+                    <h1><i class="fas fa-database"></i> Oracle Database Manager</h1>
+                </div>
+                <div class="col-auto">
+                    <span class="text-white">
+                        <i class="fas fa-user"></i> @(HttpContextAccessor.HttpContext?.User?.Identity?.Name ?? "Usuario")
+                    </span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <nav class="oracle-nav">
+        <div class="container-fluid">
+            <a href="/" @onclick="@(() => NavigateTo("/"))">
+                <i class="fas fa-home"></i> Inicio
+            </a>
+            <a href="/locks" @onclick="@(() => NavigateTo("/locks"))">
+                <i class="fas fa-lock"></i> Bloqueos
+            </a>
+            <a href="/sessions" @onclick="@(() => NavigateTo("/sessions"))">
+                <i class="fas fa-users"></i> Sesiones
+            </a>
+            <a href="/performance" @onclick="@(() => NavigateTo("/performance"))">
+                <i class="fas fa-chart-line"></i> Rendimiento
+            </a>
+            <a href="/alerts" @onclick="@(() => NavigateTo("/alerts"))">
+                <i class="fas fa-bell"></i> Alertas
+            </a>
+        </div>
+    </nav>
+
+    <main class="oracle-container">
+        <div class="container-fluid">
+            @Body
+        </div>
+    </main>
+
+    <footer class="oracle-footer text-center py-3 text-muted">
+        <small>Oracle Database Manager v1.0 - &copy; @DateTime.Now.Year</small>
+    </footer>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Ha ocurrido un error no controlado.
+    <a href="." class="reload">Recargar</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private void NavigateTo(string uri)
+    {
+        Navigation.NavigateTo(uri);
+    }
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+    }
+}

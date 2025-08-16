@@ -1,0 +1,237 @@
+# Proyecto: Oracle Database Manager Web - Similar a Oracle Enterprise Manager
+
+## Contexto
+Necesito crear una aplicación web de gestión de base de datos Oracle similar a Oracle Enterprise Manager 11g, pero desarrollada en .NET 9.0 para desplegar en IIS.
+
+## Requerimientos Técnicos
+
+### Stack Tecnológico
+- Backend: ASP.NET Core 9.0 Web API
+- Frontend: Blazor Server o MVC con Bootstrap 5
+- Base de datos: Oracle Database (conexión via Oracle.ManagedDataAccess.Core)
+- Hosting: IIS en Windows Server
+- Autenticación: Windows Authentication integrada con Active Directory
+- Real-time updates: SignalR para actualización de bloqueos en tiempo real
+
+### Arquitectura
+- Patrón Repository para acceso a datos
+- Servicios para lógica de negocio
+- Controllers para endpoints
+- Middleware para logging y manejo de errores
+- Background Services para monitoreo continuo
+
+## Funcionalidades Principales (Fase 1)
+
+### 1. Módulo de Gestión de Bloqueos (PRIORITARIO)
+Crear las vistas exactamente como Oracle EM:
+
+#### Vista "Bloqueos de Instancia"
+Columnas requeridas:
+- Seleccionar (checkbox)
+- Nombre de Usuario
+- Sesiones Identificador de Bloqueo
+- Número de Serie
+- Identificador de Proceso
+- SQL_ID
+- Tipo de Bloqueo
+- Modo Bloqueado
+- Modo Solicitado
+- Tipo de Objeto
+- Propietario del Objeto
+- Nombre del Objeto
+- ROWID
+- Tiempo en Modo Actual (segundos)
+
+Incluir:
+- Dropdown "Ver: [Todos los Bloqueos de Instancia]"
+- Checkbox "Mostrar Bloqueos de MR (Recuperación del Medio Físico)"
+- Botones: "Matar Sesión", "Detalles de la Sesión", "Ver Objeto"
+- Indicador visual de sesiones bloqueadas (ícono de advertencia)
+- Auto-refresh cada 15 segundos
+
+#### Vista "Bloqueos Bloqueantes"
+Mostrar cuando no existen bloqueos: "Actualmente no existen bloqueos de este tipo"
+
+### 2. Queries SQL Necesarias
+
+```sql
+-- Query principal para obtener bloqueos
+SELECT 
+    s.sid,
+    s.serial#,
+    s.username,
+    s.osuser,
+    s.machine,
+    s.program,
+    s.sql_id,
+    l.type,
+    DECODE(l.lmode,
+        0, 'NONE',
+        1, 'NULL',
+        2, 'ROW SHARE',
+        3, 'ROW EXCLUSIVE',
+        4, 'SHARE',
+        5, 'SHARE ROW EXCLUSIVE',
+        6, 'EXCLUSIVE') AS lock_mode,
+    DECODE(l.request,
+        0, 'NONE',
+        1, 'NULL',
+        2, 'ROW SHARE',
+        3, 'ROW EXCLUSIVE',
+        4, 'SHARE',
+        5, 'SHARE ROW EXCLUSIVE',
+        6, 'EXCLUSIVE') AS request_mode,
+    o.object_type,
+    o.owner,
+    o.object_name,
+    l.id1,
+    l.id2,
+    l.block,
+    l.ctime AS time_held_seconds
+FROM 
+    v$lock l
+    JOIN v$session s ON l.sid = s.sid
+    LEFT JOIN dba_objects o ON l.id1 = o.object_id
+WHERE 
+    l.type IN ('TM', 'TX')
+ORDER BY 
+    s.username, s.sid;
+
+-- Query para identificar sesiones bloqueadas y bloqueantes
+SELECT 
+    blocking_session.sid AS blocking_sid,
+    blocking_session.serial# AS blocking_serial,
+    blocking_session.username AS blocking_user,
+    blocked_session.sid AS blocked_sid,
+    blocked_session.serial# AS blocked_serial,
+    blocked_session.username AS blocked_user,
+    blocked_session.wait_class,
+    blocked_session.seconds_in_wait
+FROM 
+    v$session blocked_session
+    JOIN v$session blocking_session 
+        ON blocked_session.blocking_session = blocking_session.sid
+WHERE 
+    blocked_session.blocking_session IS NOT NULL;
+
+-- Query para obtener el SQL actual de una sesión
+SELECT 
+    sql_text,
+    sql_fulltext
+FROM 
+    v$sql
+WHERE 
+    sql_id = :sql_id;
+
+-- Procedimiento para matar sesión
+ALTER SYSTEM KILL SESSION ':sid,:serial#' IMMEDIATE;
+
+-- Query para detalles de sesión
+SELECT 
+    s.sid,
+    s.serial#,
+    s.username,
+    s.osuser,
+    s.machine,
+    s.terminal,
+    s.program,
+    s.module,
+    s.action,
+    s.client_info,
+    s.logon_time,
+    s.status,
+    s.state,
+    s.wait_class,
+    s.wait_time,
+    s.seconds_in_wait,
+    s.sql_id,
+    s.sql_child_number,
+    s.prev_sql_id,
+    p.spid AS os_process_id,
+    p.pga_used_mem,
+    p.pga_alloc_mem
+FROM 
+    v$session s
+    JOIN v$process p ON s.paddr = p.addr
+WHERE 
+    s.sid = :sid;
+
+3. Modelos de Datos C#
+csharppublic class SessionLock
+{
+    public int SessionId { get; set; }
+    public int SerialNumber { get; set; }
+    public string Username { get; set; }
+    public string SqlId { get; set; }
+    public string LockType { get; set; }
+    public string LockMode { get; set; }
+    public string RequestMode { get; set; }
+    public string ObjectType { get; set; }
+    public string ObjectOwner { get; set; }
+    public string ObjectName { get; set; }
+    public int TimeHeldSeconds { get; set; }
+    public bool IsBlocking { get; set; }
+    public int? BlockingSessionId { get; set; }
+}
+
+public class BlockingChain
+{
+    public SessionLock BlockingSession { get; set; }
+    public List<SessionLock> BlockedSessions { get; set; }
+}
+Características Adicionales Requeridas
+Seguridad
+
+Roles: DBA, Operator, ReadOnly
+Auditoría de todas las acciones (kill session, etc.)
+Conexión segura a Oracle usando wallet o credenciales encriptadas
+
+UI/UX
+
+Diseño idéntico al Oracle EM (header azul, navegación lateral)
+Tema claro/oscuro
+Exportación a Excel/CSV
+Gráficos de tendencias de bloqueos
+
+Monitoreo y Alertas
+
+Dashboard con métricas en tiempo real
+Sistema de alertas configurables (email/SMS)
+Histórico de bloqueos
+
+Performance
+
+Caching de queries frecuentes
+Paginación para resultados grandes
+Lazy loading
+
+Estructura de Proyecto Sugerida
+OracleDBManager/
+├── OracleDBManager.Web/           # Proyecto Blazor/MVC
+├── OracleDBManager.Core/          # Modelos y interfaces
+├── OracleDBManager.Infrastructure/# Acceso a datos
+├── OracleDBManager.Services/      # Lógica de negocio
+└── OracleDBManager.Tests/         # Unit tests
+Configuración IIS
+
+Application Pool: .NET CLR Version: No Managed Code
+Enable 32-bit Applications: False
+Identity: Cuenta de servicio con permisos Oracle
+
+Por favor, implementa primero el módulo de bloqueos con:
+
+La página principal mostrando la tabla de bloqueos actual
+Funcionalidad de auto-refresh cada 15 segundos
+Botón para matar sesiones (con confirmación)
+Vista detallada de sesión al hacer clic
+Indicadores visuales para sesiones bloqueadas/bloqueantes
+
+Usa el mismo esquema de colores que Oracle EM:
+
+Header: #003D6B (azul oscuro)
+Fondo tablas: #F5F5F5
+Filas alternadas: #FFFFFF y #F0F0F0
+Texto bloqueado: #FF0000 (rojo)
+
+
+Este prompt le dará a Cursor AI todo el contexto necesario para crear una aplicación similar al Oracle Enterprise Manager, comenzando con el módulo de gestión de bloqueos que es lo que muestran tus imágenes. Las queries SQL incluidas son las necesarias para obtener la información de los bloqueos desde Oracle.    

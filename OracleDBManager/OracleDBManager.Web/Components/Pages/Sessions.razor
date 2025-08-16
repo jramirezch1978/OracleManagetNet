@@ -1,0 +1,491 @@
+@page "/sessions"
+@using OracleDBManager.Core.Interfaces
+@using OracleDBManager.Core.Models
+@inject ILockService LockService
+@inject IJSRuntime JSRuntime
+@inject ILogger<Sessions> Logger
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+
+<PageTitle>Sesiones Activas - Oracle Database Manager</PageTitle>
+
+<div class="page-header mb-3">
+    <h2><i class="fas fa-users"></i> Sesiones Activas</h2>
+</div>
+
+<div class="table-controls">
+    <div class="row align-items-center">
+        <div class="col-auto">
+            <label>Filtrar por Estado:</label>
+            <select class="form-select form-select-sm d-inline-block w-auto" @bind="selectedStatus" @bind:after="ApplyFilter">
+                <option value="all">Todos</option>
+                <option value="ACTIVE">Activos</option>
+                <option value="INACTIVE">Inactivos</option>
+            </select>
+        </div>
+        <div class="col-auto">
+            <label>Usuario:</label>
+            <input type="text" class="form-control form-control-sm d-inline-block" style="width: 200px;" 
+                   @bind="userFilter" @bind:after="ApplyFilter" placeholder="Filtrar por usuario...">
+        </div>
+        <div class="col">
+            <button class="oracle-button" @onclick="RefreshSessions" disabled="@isLoading">
+                <i class="fas fa-refresh"></i> Actualizar
+            </button>
+            <button class="oracle-button oracle-button-danger" @onclick="KillSelectedSessions" disabled="@(!HasSelectedSessions())">
+                <i class="fas fa-times-circle"></i> Matar Sesiones
+            </button>
+            <button class="oracle-button" @onclick="ShowSessionDetails" disabled="@(!HasSingleSelection())">
+                <i class="fas fa-info-circle"></i> Detalles
+            </button>
+            <button class="oracle-button" @onclick="ExportToExcel">
+                <i class="fas fa-file-excel"></i> Exportar
+            </button>
+        </div>
+        <div class="col-auto">
+            <span class="refresh-indicator @(isLoading ? "updating" : "")">
+                @if (isLoading)
+                {
+                    <span class="oracle-spinner"></span>
+                    <span>Actualizando...</span>
+                }
+                else
+                {
+                    <i class="fas fa-clock"></i>
+                    <span>Última actualización: @lastRefresh.ToString("HH:mm:ss")</span>
+                }
+            </span>
+        </div>
+    </div>
+</div>
+
+@if (errorMessage != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="fas fa-exclamation-triangle"></i> @errorMessage
+        <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+    </div>
+}
+
+@if (successMessage != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="fas fa-check-circle"></i> @successMessage
+        <button type="button" class="btn-close" @onclick="() => successMessage = null"></button>
+    </div>
+}
+
+<div class="mb-3">
+    <span class="badge bg-info">Total: @allSessions.Count</span>
+    <span class="badge bg-success">Activas: @allSessions.Count(s => s.Status == "ACTIVE")</span>
+    <span class="badge bg-secondary">Inactivas: @allSessions.Count(s => s.Status == "INACTIVE")</span>
+</div>
+
+@if (filteredSessions.Any())
+{
+    <div class="table-responsive">
+        <table class="oracle-table">
+            <thead>
+                <tr>
+                    <th style="width: 40px;">
+                        <input type="checkbox" @onchange="SelectAllSessions" checked="@allSelected">
+                    </th>
+                    <th>SID</th>
+                    <th>Usuario</th>
+                    <th>Usuario OS</th>
+                    <th>Máquina</th>
+                    <th>IP</th>
+                    <th>Programa</th>
+                    <th>Estado</th>
+                    <th>Tiempo Conectado</th>
+                    <th>Evento Actual</th>
+                    <th>Espera (seg)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var session in filteredSessions)
+                {
+                    <tr class="@(session.Status == "ACTIVE" ? "table-success" : "")">
+                        <td>
+                            <input type="checkbox" @bind="session.IsSelected">
+                        </td>
+                        <td>@session.SessionId</td>
+                        <td>
+                            <strong>@session.Username</strong>
+                        </td>
+                        <td>@session.OsUser</td>
+                        <td title="@session.Machine">
+                            @(session.Machine?.Length > 30 ? session.Machine.Substring(0, 30) + "..." : session.Machine)
+                        </td>
+                        <td>@session.IpAddress</td>
+                        <td title="@session.Program">
+                            @(session.Program?.Length > 30 ? session.Program.Substring(0, 30) + "..." : session.Program)
+                        </td>
+                        <td>
+                            @if (session.Status == "ACTIVE")
+                            {
+                                <span class="badge bg-success">@session.Status</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">@session.Status</span>
+                            }
+                        </td>
+                        <td>
+                            <i class="fas fa-clock text-muted"></i>
+                            @session.ConnectionDurationFormatted
+                        </td>
+                        <td title="@session.Event">
+                            @(session.Event?.Length > 40 ? session.Event.Substring(0, 40) + "..." : session.Event)
+                        </td>
+                        <td>
+                            @if (session.SecondsInWait > 60)
+                            {
+                                <span class="text-warning">@session.SecondsInWait</span>
+                            }
+                            else
+                            {
+                                @session.SecondsInWait
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="no-data">
+        <i class="fas fa-info-circle fa-3x text-muted mb-3"></i>
+        <p>No se encontraron sesiones con los criterios especificados</p>
+    </div>
+}
+
+@* Modal de confirmación para matar sesión *@
+@if (showKillConfirmation)
+{
+    <div class="oracle-modal">
+        <div class="oracle-modal-content">
+            <div class="oracle-modal-header">
+                <i class="fas fa-exclamation-triangle text-warning"></i> Confirmar Terminación de Sesiones
+            </div>
+            <div class="oracle-modal-body">
+                <p>¿Está seguro que desea terminar las siguientes sesiones?</p>
+                <ul>
+                    @foreach (var session in selectedSessionsToKill)
+                    {
+                        <li>SID: @session.SessionId, Usuario: @session.Username (@session.OsUser)</li>
+                    }
+                </ul>
+                <p class="text-danger"><strong>Esta acción no se puede deshacer.</strong></p>
+            </div>
+            <div class="oracle-modal-footer">
+                <button class="oracle-button" @onclick="CancelKillSession">Cancelar</button>
+                <button class="oracle-button oracle-button-danger" @onclick="ConfirmKillSession">Confirmar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal de detalles de sesión *@
+@if (showSessionDetail && selectedSessionDetail != null)
+{
+    <div class="oracle-modal">
+        <div class="oracle-modal-content" style="max-width: 900px;">
+            <div class="oracle-modal-header">
+                <i class="fas fa-info-circle"></i> Detalles de Sesión - SID: @selectedSessionDetail.SessionId
+            </div>
+            <div class="oracle-modal-body">
+                <div class="session-detail">
+                    <h4>Información General</h4>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="detail-grid">
+                                <div class="detail-label">SID:</div>
+                                <div class="detail-value">@selectedSessionDetail.SessionId</div>
+                                
+                                <div class="detail-label">Serial#:</div>
+                                <div class="detail-value">@selectedSessionDetail.SerialNumber</div>
+                                
+                                <div class="detail-label">Usuario:</div>
+                                <div class="detail-value">@selectedSessionDetail.Username</div>
+                                
+                                <div class="detail-label">Usuario OS:</div>
+                                <div class="detail-value">@selectedSessionDetail.OsUser</div>
+                                
+                                <div class="detail-label">Estado:</div>
+                                <div class="detail-value">@selectedSessionDetail.Status</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="detail-grid">
+                                <div class="detail-label">Máquina:</div>
+                                <div class="detail-value">@selectedSessionDetail.Machine</div>
+                                
+                                <div class="detail-label">Terminal:</div>
+                                <div class="detail-value">@selectedSessionDetail.Terminal</div>
+                                
+                                <div class="detail-label">Programa:</div>
+                                <div class="detail-value">@selectedSessionDetail.Program</div>
+                                
+                                <div class="detail-label">Módulo:</div>
+                                <div class="detail-value">@selectedSessionDetail.Module</div>
+                                
+                                <div class="detail-label">Tiempo de Conexión:</div>
+                                <div class="detail-value">@selectedSessionDetail.LogonTime?.ToString("dd/MM/yyyy HH:mm:ss")</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h4>Información de Espera</h4>
+                    <div class="detail-grid mb-3">
+                        <div class="detail-label">Clase de Espera:</div>
+                        <div class="detail-value">@selectedSessionDetail.WaitClass</div>
+                        
+                        <div class="detail-label">Tiempo en Espera:</div>
+                        <div class="detail-value">@selectedSessionDetail.SecondsInWait segundos</div>
+                        
+                        <div class="detail-label">Estado:</div>
+                        <div class="detail-value">@selectedSessionDetail.State</div>
+                    </div>
+                    
+                    @if (!string.IsNullOrEmpty(selectedSessionDetail.SqlText))
+                    {
+                        <h4>SQL Actual</h4>
+                        <pre class="bg-light p-2 rounded">@selectedSessionDetail.SqlText</pre>
+                    }
+                </div>
+            </div>
+            <div class="oracle-modal-footer">
+                <button class="oracle-button" @onclick="CloseSessionDetail">Cerrar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<SessionInfo> allSessions = new();
+    private List<SessionInfo> filteredSessions = new();
+    private SessionDetail? selectedSessionDetail;
+    private List<SessionInfo> selectedSessionsToKill = new();
+    
+    private string selectedStatus = "all";
+    private string userFilter = "";
+    private bool isLoading = false;
+    private bool allSelected = false;
+    private bool showKillConfirmation = false;
+    private bool showSessionDetail = false;
+    
+    private DateTime lastRefresh = DateTime.Now;
+    private string? errorMessage;
+    private string? successMessage;
+    
+    private Timer? refreshTimer;
+    private const int RefreshIntervalSeconds = 30;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshSessions();
+        
+        // Configurar actualización automática cada 30 segundos
+        refreshTimer = new Timer(async _ => 
+        {
+            await InvokeAsync(async () => 
+            {
+                await RefreshSessions();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(RefreshIntervalSeconds), TimeSpan.FromSeconds(RefreshIntervalSeconds));
+    }
+
+    private async Task RefreshSessions()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+            
+            allSessions = await LockService.GetAllSessionsAsync();
+            ApplyFilter();
+            
+            lastRefresh = DateTime.Now;
+            Logger.LogInformation($"Sesiones actualizadas: {allSessions.Count} encontradas");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error al obtener las sesiones: {ex.Message}";
+            Logger.LogError(ex, "Error al actualizar sesiones");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        filteredSessions = allSessions;
+        
+        // Filtrar por estado
+        if (selectedStatus != "all")
+        {
+            filteredSessions = filteredSessions.Where(s => s.Status == selectedStatus).ToList();
+        }
+        
+        // Filtrar por usuario
+        if (!string.IsNullOrWhiteSpace(userFilter))
+        {
+            filteredSessions = filteredSessions.Where(s => 
+                s.Username?.Contains(userFilter, StringComparison.OrdinalIgnoreCase) == true ||
+                s.OsUser?.Contains(userFilter, StringComparison.OrdinalIgnoreCase) == true
+            ).ToList();
+        }
+        
+        // Ordenar por tiempo de conexión (más recientes primero)
+        filteredSessions = filteredSessions.OrderByDescending(s => s.LogonTime).ToList();
+    }
+
+    private void SelectAllSessions(ChangeEventArgs e)
+    {
+        allSelected = (bool)(e.Value ?? false);
+        foreach (var session in filteredSessions)
+        {
+            session.IsSelected = allSelected;
+        }
+    }
+
+    private bool HasSelectedSessions()
+    {
+        return filteredSessions.Any(s => s.IsSelected);
+    }
+
+    private bool HasSingleSelection()
+    {
+        return filteredSessions.Count(s => s.IsSelected) == 1;
+    }
+
+    private void KillSelectedSessions()
+    {
+        selectedSessionsToKill = filteredSessions.Where(s => s.IsSelected).ToList();
+        if (selectedSessionsToKill.Any())
+        {
+            showKillConfirmation = true;
+        }
+    }
+
+    private async Task ConfirmKillSession()
+    {
+        showKillConfirmation = false;
+        
+        var killedCount = 0;
+        var failedCount = 0;
+        
+        foreach (var session in selectedSessionsToKill)
+        {
+            try
+            {
+                var currentUser = "Usuario"; // Obtener del contexto
+                var result = await LockService.KillSessionAsync(
+                    session.SessionId, 
+                    session.SerialNumber, 
+                    currentUser);
+                
+                if (result.success)
+                {
+                    killedCount++;
+                }
+                else
+                {
+                    failedCount++;
+                    Logger.LogError($"No se pudo matar la sesión {session.SessionId}: {result.message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failedCount++;
+                Logger.LogError(ex, $"Error al matar sesión {session.SessionId}");
+            }
+        }
+        
+        if (killedCount > 0)
+        {
+            successMessage = $"Se terminaron {killedCount} sesión(es) exitosamente.";
+        }
+        
+        if (failedCount > 0)
+        {
+            errorMessage = $"No se pudieron terminar {failedCount} sesión(es).";
+        }
+        
+        // Limpiar selección y refrescar
+        selectedSessionsToKill.Clear();
+        await RefreshSessions();
+    }
+
+    private void CancelKillSession()
+    {
+        showKillConfirmation = false;
+        selectedSessionsToKill.Clear();
+    }
+
+    private async Task ShowSessionDetails()
+    {
+        var selectedSession = filteredSessions.FirstOrDefault(s => s.IsSelected);
+        if (selectedSession != null)
+        {
+            try
+            {
+                isLoading = true;
+                selectedSessionDetail = await LockService.GetSessionDetailAsync(selectedSession.SessionId);
+                showSessionDetail = true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Error al obtener detalles de la sesión: {ex.Message}";
+                Logger.LogError(ex, "Error al obtener detalles de sesión");
+            }
+            finally
+            {
+                isLoading = false;
+            }
+        }
+    }
+
+    private void CloseSessionDetail()
+    {
+        showSessionDetail = false;
+        selectedSessionDetail = null;
+    }
+
+    private async Task ExportToExcel()
+    {
+        try
+        {
+            var csv = "SID,Usuario,Usuario OS,Máquina,IP,Programa,Estado,Tiempo Conectado,Evento,Segundos en Espera\n";
+            foreach (var session in filteredSessions)
+            {
+                csv += $"{session.SessionId},{session.Username},{session.OsUser}," +
+                       $"{session.Machine},{session.IpAddress},{session.Program}," +
+                       $"{session.Status},{session.ConnectionDurationFormatted}," +
+                       $"{session.Event},{session.SecondsInWait}\n";
+            }
+            
+            var fileName = $"sesiones_oracle_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+            await JSRuntime.InvokeVoidAsync("downloadFile", fileName, csv);
+            
+            successMessage = "Archivo exportado exitosamente";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error al exportar: {ex.Message}";
+            Logger.LogError(ex, "Error al exportar sesiones");
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        refreshTimer?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

@@ -1,0 +1,406 @@
+@page "/locks"
+@using OracleDBManager.Core.Interfaces
+@using OracleDBManager.Core.Models
+@inject ILockService LockService
+@inject IJSRuntime JSRuntime
+@inject ILogger<InstanceLocks> Logger
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+
+<PageTitle>Bloqueos de Instancia - Oracle Database Manager</PageTitle>
+
+<div class="page-header mb-3">
+    <h2><i class="fas fa-lock"></i> Bloqueos de Instancia</h2>
+</div>
+
+<div class="table-controls">
+    <div class="row align-items-center">
+        <div class="col-auto">
+            <label>Ver:</label>
+            <select class="form-select form-select-sm d-inline-block w-auto" @bind="selectedView">
+                <option value="all">Todos los Bloqueos de Instancia</option>
+                <option value="blocking">Solo Bloqueos Bloqueantes</option>
+                <option value="blocked">Solo Sesiones Bloqueadas</option>
+            </select>
+        </div>
+        <div class="col-auto">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" @bind="showMRLocks" id="showMRLocks">
+                <label class="form-check-label" for="showMRLocks">
+                    Mostrar Bloqueos de MR (Recuperación del Medio Físico)
+                </label>
+            </div>
+        </div>
+        <div class="col">
+            <button class="oracle-button" @onclick="RefreshLocks" disabled="@isLoading">
+                <i class="fas fa-refresh"></i> Actualizar
+            </button>
+            <button class="oracle-button oracle-button-danger" @onclick="KillSelectedSessions" disabled="@(!HasSelectedSessions())">
+                <i class="fas fa-times-circle"></i> Matar Sesión
+            </button>
+            <button class="oracle-button" @onclick="ShowSessionDetails" disabled="@(!HasSingleSelection())">
+                <i class="fas fa-info-circle"></i> Detalles de la Sesión
+            </button>
+        </div>
+        <div class="col-auto">
+            <span class="refresh-indicator @(isLoading ? "updating" : "")">
+                @if (isLoading)
+                {
+                    <span class="oracle-spinner"></span>
+                    <span>Actualizando...</span>
+                }
+                else
+                {
+                    <i class="fas fa-clock"></i>
+                    <span>Última actualización: @lastRefresh.ToString("HH:mm:ss")</span>
+                }
+            </span>
+        </div>
+    </div>
+</div>
+
+@if (errorMessage != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="fas fa-exclamation-triangle"></i> @errorMessage
+        <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+    </div>
+}
+
+@if (successMessage != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="fas fa-check-circle"></i> @successMessage
+        <button type="button" class="btn-close" @onclick="() => successMessage = null"></button>
+    </div>
+}
+
+@if (filteredLocks.Any())
+{
+    <table class="oracle-table">
+        <thead>
+            <tr>
+                <th>
+                    <input type="checkbox" @onchange="SelectAllSessions" checked="@allSelected">
+                </th>
+                <th>Estado</th>
+                <th>Nombre de Usuario</th>
+                <th>SID</th>
+                <th>Número de Serie</th>
+                <th>Proceso</th>
+                <th>SQL_ID</th>
+                <th>Tipo de Bloqueo</th>
+                <th>Modo Bloqueado</th>
+                <th>Modo Solicitado</th>
+                <th>Tipo de Objeto</th>
+                <th>Propietario</th>
+                <th>Nombre del Objeto</th>
+                <th>Tiempo (seg)</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var lockItem in filteredLocks)
+            {
+                <tr class="@(lockItem.IsBlocked ? "session-blocked" : "")">
+                    <td>
+                        <input type="checkbox" @bind="lockItem.IsSelected">
+                    </td>
+                    <td>
+                        @if (lockItem.IsBlocking)
+                        {
+                            <i class="fas fa-exclamation-triangle blocking-icon" title="Sesión bloqueante"></i>
+                        }
+                        @if (lockItem.IsBlocked)
+                        {
+                            <i class="fas fa-ban text-danger" title="Sesión bloqueada por SID: @lockItem.BlockedBySessionId"></i>
+                        }
+                    </td>
+                    <td>@lockItem.Username</td>
+                    <td>@lockItem.SessionId</td>
+                    <td>@lockItem.SerialNumber</td>
+                    <td>@lockItem.ProcessId</td>
+                    <td>@lockItem.SqlId</td>
+                    <td>@lockItem.LockType</td>
+                    <td>@lockItem.LockMode</td>
+                    <td>@lockItem.RequestMode</td>
+                    <td>@lockItem.ObjectType</td>
+                    <td>@lockItem.ObjectOwner</td>
+                    <td>@lockItem.ObjectName</td>
+                    <td>@lockItem.TimeHeldSeconds</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <div class="no-data">
+        <i class="fas fa-info-circle fa-3x text-muted mb-3"></i>
+        <p>Actualmente no existen bloqueos de este tipo</p>
+    </div>
+}
+
+@* Modal de confirmación para matar sesión *@
+@if (showKillConfirmation)
+{
+    <div class="oracle-modal">
+        <div class="oracle-modal-content">
+            <div class="oracle-modal-header">
+                <i class="fas fa-exclamation-triangle text-warning"></i> Confirmar Terminación de Sesión
+            </div>
+            <div class="oracle-modal-body">
+                <p>¿Está seguro que desea terminar las siguientes sesiones?</p>
+                <ul>
+                    @foreach (var session in selectedSessionsToKill)
+                    {
+                        <li>SID: @session.SessionId, Usuario: @session.Username</li>
+                    }
+                </ul>
+                <p class="text-danger"><strong>Esta acción no se puede deshacer.</strong></p>
+            </div>
+            <div class="oracle-modal-footer">
+                <button class="oracle-button" @onclick="CancelKillSession">Cancelar</button>
+                <button class="oracle-button oracle-button-danger" @onclick="ConfirmKillSession">Confirmar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal de detalles de sesión *@
+@if (showSessionDetail && selectedSessionDetail != null)
+{
+    <div class="oracle-modal">
+        <div class="oracle-modal-content" style="max-width: 800px;">
+            <div class="oracle-modal-header">
+                <i class="fas fa-info-circle"></i> Detalles de Sesión - SID: @selectedSessionDetail.SessionId
+            </div>
+            <div class="oracle-modal-body">
+                <div class="session-detail">
+                    <h4>Información General</h4>
+                    <div class="detail-grid mb-3">
+                        <div class="detail-label">SID:</div>
+                        <div class="detail-value">@selectedSessionDetail.SessionId</div>
+                        
+                        <div class="detail-label">Serial#:</div>
+                        <div class="detail-value">@selectedSessionDetail.SerialNumber</div>
+                        
+                        <div class="detail-label">Usuario:</div>
+                        <div class="detail-value">@selectedSessionDetail.Username</div>
+                        
+                        <div class="detail-label">Usuario OS:</div>
+                        <div class="detail-value">@selectedSessionDetail.OsUser</div>
+                        
+                        <div class="detail-label">Máquina:</div>
+                        <div class="detail-value">@selectedSessionDetail.Machine</div>
+                        
+                        <div class="detail-label">Programa:</div>
+                        <div class="detail-value">@selectedSessionDetail.Program</div>
+                        
+                        <div class="detail-label">Estado:</div>
+                        <div class="detail-value">@selectedSessionDetail.Status</div>
+                        
+                        <div class="detail-label">Tiempo de Conexión:</div>
+                        <div class="detail-value">@selectedSessionDetail.LogonTime?.ToString("dd/MM/yyyy HH:mm:ss")</div>
+                    </div>
+                    
+                    @if (!string.IsNullOrEmpty(selectedSessionDetail.SqlText))
+                    {
+                        <h4>SQL Actual</h4>
+                        <pre class="bg-light p-2 rounded">@selectedSessionDetail.SqlText</pre>
+                    }
+                </div>
+            </div>
+            <div class="oracle-modal-footer">
+                <button class="oracle-button" @onclick="CloseSessionDetail">Cerrar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<SessionLock> allLocks = new();
+    private List<SessionLock> filteredLocks = new();
+    private SessionDetail? selectedSessionDetail;
+    private List<SessionLock> selectedSessionsToKill = new();
+    
+    private string selectedView = "all";
+    private bool showMRLocks = false;
+    private bool isLoading = false;
+    private bool allSelected = false;
+    private bool showKillConfirmation = false;
+    private bool showSessionDetail = false;
+    
+    private DateTime lastRefresh = DateTime.Now;
+    private string? errorMessage;
+    private string? successMessage;
+    
+    private Timer? refreshTimer;
+    private const int RefreshIntervalSeconds = 15;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshLocks();
+        
+        // Configurar actualización automática
+        refreshTimer = new Timer(async _ => 
+        {
+            await InvokeAsync(async () => 
+            {
+                await RefreshLocks();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(RefreshIntervalSeconds), TimeSpan.FromSeconds(RefreshIntervalSeconds));
+    }
+
+    private async Task RefreshLocks()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+            
+            allLocks = await LockService.GetAllLocksAsync(showMRLocks);
+            ApplyFilter();
+            
+            lastRefresh = DateTime.Now;
+            Logger.LogInformation($"Bloqueos actualizados: {allLocks.Count} encontrados");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error al obtener los bloqueos: {ex.Message}";
+            Logger.LogError(ex, "Error al actualizar bloqueos");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        filteredLocks = selectedView switch
+        {
+            "blocking" => allLocks.Where(l => l.IsBlocking).ToList(),
+            "blocked" => allLocks.Where(l => l.IsBlocked).ToList(),
+            _ => allLocks.ToList()
+        };
+    }
+
+    private void SelectAllSessions(ChangeEventArgs e)
+    {
+        allSelected = (bool)(e.Value ?? false);
+        foreach (var lockItem in filteredLocks)
+        {
+            lockItem.IsSelected = allSelected;
+        }
+    }
+
+    private bool HasSelectedSessions()
+    {
+        return filteredLocks.Any(l => l.IsSelected);
+    }
+
+    private bool HasSingleSelection()
+    {
+        return filteredLocks.Count(l => l.IsSelected) == 1;
+    }
+
+    private void KillSelectedSessions()
+    {
+        selectedSessionsToKill = filteredLocks.Where(l => l.IsSelected).ToList();
+        if (selectedSessionsToKill.Any())
+        {
+            showKillConfirmation = true;
+        }
+    }
+
+    private async Task ConfirmKillSession()
+    {
+        showKillConfirmation = false;
+        
+        var killedCount = 0;
+        var failedCount = 0;
+        
+        foreach (var session in selectedSessionsToKill)
+        {
+            try
+            {
+                var currentUser = "Usuario"; // Obtener del contexto
+                var result = await LockService.KillSessionAsync(
+                    session.SessionId, 
+                    session.SerialNumber, 
+                    currentUser);
+                
+                if (result.success)
+                {
+                    killedCount++;
+                }
+                else
+                {
+                    failedCount++;
+                    Logger.LogError($"No se pudo matar la sesión {session.SessionId}: {result.message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failedCount++;
+                Logger.LogError(ex, $"Error al matar sesión {session.SessionId}");
+            }
+        }
+        
+        if (killedCount > 0)
+        {
+            successMessage = $"Se terminaron {killedCount} sesión(es) exitosamente.";
+        }
+        
+        if (failedCount > 0)
+        {
+            errorMessage = $"No se pudieron terminar {failedCount} sesión(es).";
+        }
+        
+        // Limpiar selección y refrescar
+        selectedSessionsToKill.Clear();
+        await RefreshLocks();
+    }
+
+    private void CancelKillSession()
+    {
+        showKillConfirmation = false;
+        selectedSessionsToKill.Clear();
+    }
+
+    private async Task ShowSessionDetails()
+    {
+        var selectedSession = filteredLocks.FirstOrDefault(l => l.IsSelected);
+        if (selectedSession != null)
+        {
+            try
+            {
+                isLoading = true;
+                selectedSessionDetail = await LockService.GetSessionDetailAsync(selectedSession.SessionId);
+                showSessionDetail = true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Error al obtener detalles de la sesión: {ex.Message}";
+                Logger.LogError(ex, "Error al obtener detalles de sesión");
+            }
+            finally
+            {
+                isLoading = false;
+            }
+        }
+    }
+
+    private void CloseSessionDetail()
+    {
+        showSessionDetail = false;
+        selectedSessionDetail = null;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        refreshTimer?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

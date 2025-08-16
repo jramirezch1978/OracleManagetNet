@@ -1,0 +1,285 @@
+/* Estilos Oracle Enterprise Manager */
+:root {
+    --oracle-header-bg: #003D6B;
+    --oracle-header-text: #FFFFFF;
+    --oracle-table-bg: #F5F5F5;
+    --oracle-row-even: #FFFFFF;
+    --oracle-row-odd: #F0F0F0;
+    --oracle-blocked-text: #FF0000;
+    --oracle-border: #CCCCCC;
+    --oracle-hover: #E0E0E0;
+    --oracle-button-bg: #0572CE;
+    --oracle-button-hover: #0A5BA0;
+    --oracle-warning: #FFA500;
+    --oracle-success: #32CD32;
+}
+
+/* Header principal */
+.oracle-header {
+    background-color: var(--oracle-header-bg);
+    color: var(--oracle-header-text);
+    padding: 15px 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.oracle-header h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 400;
+}
+
+/* Navegación */
+.oracle-nav {
+    background-color: #F0F0F0;
+    border-bottom: 1px solid var(--oracle-border);
+    padding: 10px 20px;
+}
+
+.oracle-nav a {
+    color: var(--oracle-header-bg);
+    text-decoration: none;
+    margin-right: 20px;
+    font-weight: 500;
+}
+
+.oracle-nav a:hover {
+    text-decoration: underline;
+}
+
+/* Contenedor principal */
+.oracle-container {
+    background-color: #FFFFFF;
+    padding: 20px;
+    min-height: calc(100vh - 200px);
+}
+
+/* Tabla de bloqueos */
+.oracle-table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: var(--oracle-table-bg);
+    border: 1px solid var(--oracle-border);
+}
+
+.oracle-table thead {
+    background-color: #E8E8E8;
+    border-bottom: 2px solid var(--oracle-border);
+}
+
+.oracle-table th {
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 13px;
+    color: #333;
+    white-space: nowrap;
+}
+
+.oracle-table td {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-bottom: 1px solid #E0E0E0;
+}
+
+.oracle-table tbody tr:nth-child(even) {
+    background-color: var(--oracle-row-even);
+}
+
+.oracle-table tbody tr:nth-child(odd) {
+    background-color: var(--oracle-row-odd);
+}
+
+.oracle-table tbody tr:hover {
+    background-color: var(--oracle-hover);
+}
+
+/* Checkbox en tabla */
+.oracle-table input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+}
+
+/* Sesiones bloqueadas */
+.session-blocked {
+    color: var(--oracle-blocked-text);
+    font-weight: bold;
+}
+
+.blocking-icon {
+    color: var(--oracle-warning);
+    margin-right: 5px;
+}
+
+/* Botones */
+.oracle-button {
+    background-color: var(--oracle-button-bg);
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    margin-right: 8px;
+    border-radius: 3px;
+}
+
+.oracle-button:hover {
+    background-color: var(--oracle-button-hover);
+}
+
+.oracle-button:disabled {
+    background-color: #CCCCCC;
+    cursor: not-allowed;
+}
+
+.oracle-button-danger {
+    background-color: #DC3545;
+}
+
+.oracle-button-danger:hover {
+    background-color: #B21F2D;
+}
+
+.oracle-button-primary {
+    background-color: var(--oracle-button-bg);
+}
+
+.oracle-button-primary:hover {
+    background-color: var(--oracle-button-hover);
+}
+
+/* Controles de la tabla */
+.table-controls {
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: #F8F8F8;
+    border: 1px solid var(--oracle-border);
+}
+
+.table-controls label {
+    margin-right: 15px;
+    font-size: 13px;
+}
+
+.table-controls select {
+    padding: 4px 8px;
+    font-size: 13px;
+    border: 1px solid var(--oracle-border);
+}
+
+/* Indicador de actualización */
+.refresh-indicator {
+    float: right;
+    font-size: 12px;
+    color: #666;
+}
+
+.refresh-indicator.updating {
+    color: var(--oracle-button-bg);
+}
+
+/* Modal de confirmación */
+.oracle-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.oracle-modal-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    max-width: 500px;
+    width: 90%;
+}
+
+.oracle-modal-header {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 15px;
+    color: var(--oracle-header-bg);
+}
+
+.oracle-modal-body {
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+
+.oracle-modal-footer {
+    text-align: right;
+}
+
+/* Detalle de sesión */
+.session-detail {
+    background-color: #F8F8F8;
+    border: 1px solid var(--oracle-border);
+    padding: 15px;
+    margin-top: 20px;
+}
+
+.session-detail h3 {
+    color: var(--oracle-header-bg);
+    margin-top: 0;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 10px;
+}
+
+.detail-label {
+    font-weight: 600;
+    color: #666;
+    font-size: 13px;
+}
+
+.detail-value {
+    font-size: 13px;
+    color: #333;
+}
+
+/* Sin datos */
+.no-data {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+    font-size: 14px;
+}
+
+/* Loading spinner */
+.oracle-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(0, 114, 206, 0.3);
+    border-radius: 50%;
+    border-top-color: var(--oracle-button-bg);
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .oracle-table {
+        font-size: 11px;
+    }
+    
+    .table-controls {
+        flex-direction: column;
+    }
+    
+    .detail-grid {
+        grid-template-columns: 1fr;
+    }
+}
