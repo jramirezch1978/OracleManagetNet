@@ -111,7 +111,11 @@
                         </td>
                         <td>@session.SessionId</td>
                         <td>
-                            <strong>@session.Username</strong>
+                            <span class="text-primary" style="cursor: pointer; text-decoration: none;"
+                                  @onclick="async () => await ShowSessionDetailsForId(session.SessionId)" 
+                                  @onclick:stopPropagation="true">
+                                <strong>@session.Username</strong>
+                            </span>
                         </td>
                         <td>@session.OsUser</td>
                         <td title="@session.Machine">
@@ -136,7 +140,11 @@
                             @session.ConnectionDurationFormatted
                         </td>
                         <td title="@session.Event">
-                            @(session.Event?.Length > 40 ? session.Event.Substring(0, 40) + "..." : session.Event)
+                            <span class="text-primary" style="cursor: pointer; text-decoration: none;"
+                                  @onclick="async () => await ShowSessionHistory(session.SessionId, session.Username)"
+                                  @onclick:stopPropagation="true">
+                                @(session.Event?.Length > 40 ? session.Event.Substring(0, 40) + "..." : session.Event)
+                            </span>
                         </td>
                         <td>
                             @if (session.SecondsInWait > 60)
@@ -191,8 +199,8 @@ else
 @* Modal de detalles de sesión *@
 @if (showSessionDetail && selectedSessionDetail != null)
 {
-    <div class="oracle-modal">
-        <div class="oracle-modal-content" style="max-width: 900px;">
+    <div class="oracle-modal" @onclick="CloseSessionDetail" @onclick:stopPropagation="true">
+        <div class="oracle-modal-content" style="max-width: 900px;" @onclick:stopPropagation="true">
             <div class="oracle-modal-header">
                 <i class="fas fa-info-circle"></i> Detalles de Sesión - SID: @selectedSessionDetail.SessionId
             </div>
@@ -253,7 +261,9 @@ else
                     @if (!string.IsNullOrEmpty(selectedSessionDetail.SqlText))
                     {
                         <h4>SQL Actual</h4>
-                        <pre class="bg-light p-2 rounded">@selectedSessionDetail.SqlText</pre>
+                        <div class="sql-container">
+                            <pre class="bg-light p-3 rounded">@((MarkupString)selectedSessionDetail.SqlText)</pre>
+                        </div>
                     }
                 </div>
             </div>
@@ -264,11 +274,103 @@ else
     </div>
 }
 
+@* Modal de historial de sesión *@
+@if (showSessionHistory && sessionHistoryDetail != null)
+{
+    <div class="oracle-modal" @onclick="CloseSessionHistory" @onclick:stopPropagation="true">
+        <div class="oracle-modal-content" style="max-width: 1200px;" @onclick:stopPropagation="true">
+            <div class="oracle-modal-header">
+                <i class="fas fa-history"></i> Historial de Sesión - SID: @sessionHistoryDetail.SessionId (@sessionHistoryDetail.Username)
+            </div>
+            <div class="oracle-modal-body" style="max-height: 600px; overflow-y: auto;">
+                @if (sessionSqlHistory != null && sessionSqlHistory.Any())
+                {
+                    <h4>Consultas SQL Ejecutadas</h4>
+                    <div class="table-responsive">
+                        <table class="oracle-table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha/Hora</th>
+                                    <th>SQL ID</th>
+                                    <th>Módulo</th>
+                                    <th>Tiempo Ejecución</th>
+                                    <th>Consulta</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var sql in sessionSqlHistory)
+                                {
+                                    <tr>
+                                        <td>@sql.FirstLoadTime.ToString("dd/MM/yyyy HH:mm:ss")</td>
+                                        <td>@sql.SqlId</td>
+                                        <td>@sql.Module</td>
+                                        <td>@((sql.ElapsedTime / 1000).ToString("N0")) ms</td>
+                                        <td>
+                                            <details>
+                                                <summary style="cursor: pointer;">Ver SQL</summary>
+                                                <div class="sql-container mt-2">
+                                                    <pre class="bg-light p-2 rounded">@((MarkupString)(sql.SqlText ?? ""))</pre>
+                                                </div>
+                                            </details>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> No se encontró historial SQL reciente para esta sesión.
+                    </div>
+                }
+                
+                @if (sessionEventHistory != null && sessionEventHistory.Any())
+                {
+                    <h4 class="mt-4">Historial de Eventos de Espera</h4>
+                    <div class="table-responsive">
+                        <table class="oracle-table">
+                            <thead>
+                                <tr>
+                                    <th>Evento</th>
+                                    <th>Clase de Espera</th>
+                                    <th>Total de Esperas</th>
+                                    <th>Tiempo Total (seg)</th>
+                                    <th>Tiempo Promedio (ms)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var evt in sessionEventHistory)
+                                {
+                                    <tr>
+                                        <td>@evt.EventName</td>
+                                        <td>@evt.WaitClass</td>
+                                        <td>@evt.TotalWaits</td>
+                                        <td>@FormatLargeNumber(evt.TimeWaitedSeconds) seg</td>
+                                        <td>@FormatLargeNumber(evt.AverageWaitMs) ms</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+            <div class="oracle-modal-footer">
+                <button class="oracle-button" @onclick="CloseSessionHistory">Cerrar</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<SessionInfo> allSessions = new();
     private List<SessionInfo> filteredSessions = new();
     private SessionDetail? selectedSessionDetail;
     private List<SessionInfo> selectedSessionsToKill = new();
+    private SessionInfo? sessionHistoryDetail;
+    private List<SessionSqlHistory>? sessionSqlHistory;
+    private List<SessionEventHistory>? sessionEventHistory;
     
     private string selectedStatus = "all";
     private string userFilter = "";
@@ -276,6 +378,7 @@ else
     private bool allSelected = false;
     private bool showKillConfirmation = false;
     private bool showSessionDetail = false;
+    private bool showSessionHistory = false;
     
     private DateTime lastRefresh = DateTime.Now;
     private string? errorMessage;
@@ -458,6 +561,110 @@ else
         selectedSessionDetail = null;
     }
 
+    private async Task ShowSessionDetailsForId(int sessionId)
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+            
+            selectedSessionDetail = await LockService.GetSessionDetailAsync(sessionId);
+            
+            // Formatear el SQL si existe
+            if (!string.IsNullOrEmpty(selectedSessionDetail.SqlText))
+            {
+                try
+                {
+                    var formattedSql = await JSRuntime.InvokeAsync<string>("formatSql", selectedSessionDetail.SqlText);
+                    if (!string.IsNullOrEmpty(formattedSql))
+                    {
+                        selectedSessionDetail.SqlText = formattedSql;
+                    }
+                }
+                catch
+                {
+                    // Si falla el formateo, mantener el SQL original
+                }
+            }
+            
+            showSessionDetail = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error al obtener detalles de la sesión: {ex.Message}";
+            Logger.LogError(ex, "Error al obtener detalles de sesión");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowSessionHistory(int sessionId, string? username)
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+            StateHasChanged();
+            
+            // Buscar la sesión actual
+            sessionHistoryDetail = allSessions.FirstOrDefault(s => s.SessionId == sessionId);
+            
+            // Obtener historial SQL
+            sessionSqlHistory = await LockService.GetSessionSqlHistoryAsync(sessionId, username);
+            
+            // Formatear SQL en el historial
+            if (sessionSqlHistory != null && sessionSqlHistory.Any())
+            {
+                foreach (var sql in sessionSqlHistory)
+                {
+                    if (!string.IsNullOrEmpty(sql.SqlText))
+                    {
+                        try
+                        {
+                            var formattedSql = await JSRuntime.InvokeAsync<string>("formatSql", sql.SqlText);
+                            if (!string.IsNullOrEmpty(formattedSql))
+                            {
+                                sql.SqlText = formattedSql;
+                            }
+                        }
+                        catch
+                        {
+                            // Si falla el formateo, mantener el SQL original
+                        }
+                    }
+                }
+            }
+            
+            // Obtener historial de eventos
+            sessionEventHistory = await LockService.GetSessionEventHistoryAsync(sessionId);
+            
+            showSessionHistory = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error al obtener historial de la sesión: {ex.Message}";
+            Logger.LogError(ex, "Error al obtener historial de sesión");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseSessionHistory()
+    {
+        showSessionHistory = false;
+        sessionHistoryDetail = null;
+        sessionSqlHistory = null;
+        sessionEventHistory = null;
+    }
+
     private async Task ExportToExcel()
     {
         try
@@ -487,5 +694,17 @@ else
     {
         refreshTimer?.Dispose();
         return ValueTask.CompletedTask;
+    }
+    
+    private string FormatLargeNumber(decimal value)
+    {
+        if (value >= 1000000000)
+            return (value / 1000000000).ToString("N1") + "B";
+        else if (value >= 1000000)
+            return (value / 1000000).ToString("N1") + "M";
+        else if (value >= 1000)
+            return (value / 1000).ToString("N1") + "K";
+        else
+            return value.ToString("N0");
     }
 }

@@ -99,6 +99,20 @@
     cursor: pointer;
 }
 
+/* Enlaces en tablas */
+.oracle-table a,
+.oracle-table span.text-primary {
+    color: #0066cc;
+    cursor: pointer;
+    font-weight: inherit;
+}
+
+.oracle-table a:hover,
+.oracle-table span.text-primary:hover {
+    color: #0052a3;
+    text-decoration: underline !important;
+}
+
 /* Sesiones bloqueadas */
 .session-blocked {
     color: var(--oracle-blocked-text);
@@ -246,6 +260,76 @@
 .detail-value {
     font-size: 13px;
     color: #333;
+}
+
+/* SQL Container en modales */
+.sql-container {
+    position: relative;
+}
+
+.sql-container pre {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    background-color: #f8f9fa;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    white-space: pre;
+    overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 16px;
+    margin: 0;
+    color: #1f2937;
+    tab-size: 4;
+}
+
+/* Scrollbar personalizado para SQL */
+.sql-container pre::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.sql-container pre::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.sql-container pre::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.sql-container pre::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Resaltado de sintaxis SQL básico */
+.sql-keyword {
+    color: #0066cc;
+    font-weight: 600;
+}
+
+.sql-string {
+    color: #008000;
+}
+
+.sql-number {
+    color: #b91c1c;
+}
+
+.sql-comment {
+    color: #6b7280;
+    font-style: italic;
+}
+
+.sql-function {
+    color: #7c3aed;
+}
+
+.sql-operator {
+    color: #0891b2;
+    font-weight: 600;
 }
 
 /* Sin datos */

@@ -12,5 +12,7 @@ namespace OracleDBManager.Core.Interfaces
         Task<bool> KillSessionAsync(int sessionId, int serialNumber);
         Task<bool> TestConnectionAsync();
         Task<List<SessionInfo>> GetAllSessionsAsync();
+        Task<List<SessionSqlHistory>> GetSessionSqlHistoryAsync(int sessionId, string? username);
+        Task<List<SessionEventHistory>> GetSessionEventHistoryAsync(int sessionId);
     }
 }

@@ -100,8 +100,16 @@
                     <input type="text" class="form-control" @bind="connectionModel.Port" />
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Nombre del Servicio (SID):</label>
+                    <label class="form-label">@(connectionModel.UseSID ? "SID:" : "Nombre del Servicio:")</label>
                     <input type="text" class="form-control" @bind="connectionModel.ServiceName" />
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" @bind="connectionModel.UseSID" id="useSID">
+                        <label class="form-check-label" for="useSID">
+                            Usar SID en lugar de Service Name
+                        </label>
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Usuario:</label>
@@ -203,17 +211,34 @@
         // Cargar valores desde la configuración
         if (!string.IsNullOrEmpty(OracleConfig.DataSource))
         {
-            // Extraer host, puerto y servicio del DataSource
-            var match = System.Text.RegularExpressions.Regex.Match(
+            // Primero intentar extraer con SERVICE_NAME
+            var matchServiceName = System.Text.RegularExpressions.Regex.Match(
                 OracleConfig.DataSource, 
                 @"HOST=([^)]+)\).*PORT=(\d+)\).*SERVICE_NAME=([^)]+)\)"
             );
             
-            if (match.Success)
+            if (matchServiceName.Success)
             {
-                connectionModel.Host = match.Groups[1].Value;
-                connectionModel.Port = match.Groups[2].Value;
-                connectionModel.ServiceName = match.Groups[3].Value;
+                connectionModel.Host = matchServiceName.Groups[1].Value;
+                connectionModel.Port = matchServiceName.Groups[2].Value;
+                connectionModel.ServiceName = matchServiceName.Groups[3].Value;
+                connectionModel.UseSID = false;
+            }
+            else
+            {
+                // Si no, intentar con SID
+                var matchSID = System.Text.RegularExpressions.Regex.Match(
+                    OracleConfig.DataSource, 
+                    @"HOST=([^)]+)\).*PORT=(\d+)\).*SID=([^)]+)\)"
+                );
+                
+                if (matchSID.Success)
+                {
+                    connectionModel.Host = matchSID.Groups[1].Value;
+                    connectionModel.Port = matchSID.Groups[2].Value;
+                    connectionModel.ServiceName = matchSID.Groups[3].Value;
+                    connectionModel.UseSID = true;
+                }
             }
         }
         
@@ -265,7 +290,7 @@
                            $"IP Local: {clientInfo.LocalIpV4}, " +
                            $"IP Pública: {clientInfo.PublicIp}, " +
                            $"MAC: {clientInfo.MacAddress}, " +
-                           $"Interfaz: {clientInfo.NetworkInterface}";
+                           $"Interfaz: {clientInfo.NetworkInterfaceName}";
         
         try
         {

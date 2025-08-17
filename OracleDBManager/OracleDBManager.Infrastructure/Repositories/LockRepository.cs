@@ -271,10 +271,12 @@ namespace OracleDBManager.Infrastructure.Repositories
                     s.prev_sql_id,
                     p.spid AS os_process_id,
                     p.pga_used_mem,
-                    p.pga_alloc_mem
+                    p.pga_alloc_mem,
+                    sql.sql_text AS current_sql_text
                 FROM 
                     v$session s
                     JOIN v$process p ON s.paddr = p.addr
+                    LEFT JOIN v$sql sql ON s.sql_id = sql.sql_id AND s.sql_child_number = sql.child_number
                 WHERE 
                     s.sid = :sid";
                     
@@ -311,11 +313,12 @@ namespace OracleDBManager.Infrastructure.Repositories
                     PrevSqlId = reader.IsDBNull(reader.GetOrdinal("prev_sql_id")) ? null : reader.GetString(reader.GetOrdinal("prev_sql_id")),
                     OsProcessId = reader.IsDBNull(reader.GetOrdinal("os_process_id")) ? null : reader.GetString(reader.GetOrdinal("os_process_id")),
                     PgaUsedMem = reader.IsDBNull(reader.GetOrdinal("pga_used_mem")) ? null : reader.GetDecimal(reader.GetOrdinal("pga_used_mem")),
-                    PgaAllocMem = reader.IsDBNull(reader.GetOrdinal("pga_alloc_mem")) ? null : reader.GetDecimal(reader.GetOrdinal("pga_alloc_mem"))
+                    PgaAllocMem = reader.IsDBNull(reader.GetOrdinal("pga_alloc_mem")) ? null : reader.GetDecimal(reader.GetOrdinal("pga_alloc_mem")),
+                    SqlText = reader.IsDBNull(reader.GetOrdinal("current_sql_text")) ? null : reader.GetString(reader.GetOrdinal("current_sql_text"))
                 };
                 
-                // Obtener el SQL Text si existe
-                if (!string.IsNullOrEmpty(detail.SqlId))
+                // Si no se obtuvo el SQL text de la consulta principal, intentar obtenerlo por separado
+                if (string.IsNullOrEmpty(detail.SqlText) && !string.IsNullOrEmpty(detail.SqlId))
                 {
                     detail.SqlText = await GetSessionSqlTextAsync(detail.SqlId);
                 }
@@ -371,21 +374,14 @@ namespace OracleDBManager.Infrastructure.Repositories
         
         public async Task<bool> TestConnectionAsync()
         {
-            try
-            {
-                using var connection = GetConnection();
-                await connection.OpenAsync();
-                
-                using var command = new OracleCommand("SELECT 1 FROM DUAL", connection);
-                command.CommandTimeout = _config.CommandTimeout;
-                
-                await command.ExecuteScalarAsync();
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            using var connection = GetConnection();
+            await connection.OpenAsync();
+            
+            using var command = new OracleCommand("SELECT 1 FROM DUAL", connection);
+            command.CommandTimeout = _config.CommandTimeout;
+            
+            await command.ExecuteScalarAsync();
+            return true;
         }
         
         public async Task<List<SessionInfo>> GetAllSessionsAsync()
@@ -411,12 +407,10 @@ namespace OracleDBManager.Infrastructure.Repositories
                     s.event,
                     s.seconds_in_wait,
                     s.wait_class,
-                    p.spid AS process_id,
-                    c.client_info AS connection_info
+                    p.spid AS process_id
                 FROM 
                     v$session s
                     LEFT JOIN v$process p ON s.paddr = p.addr
-                    LEFT JOIN v$session_connect_info c ON s.sid = c.sid
                 WHERE 
                     s.type = 'USER'
                     AND s.username IS NOT NULL
@@ -472,6 +466,226 @@ namespace OracleDBManager.Infrastructure.Repositories
             }
             
             return sessions;
+        }
+        
+        public async Task<List<SessionSqlHistory>> GetSessionSqlHistoryAsync(int sessionId, string? username)
+        {
+            var sqlHistory = new List<SessionSqlHistory>();
+            
+            try
+            {
+                // Consulta simplificada compatible con Oracle 11g
+                const string query = @"
+                SELECT * FROM (
+                    SELECT 
+                        s.sql_id,
+                        SUBSTR(s.sql_fulltext, 1, 4000) AS sql_text,
+                        NVL(s.module, 'N/A') AS module,
+                        NVL(TO_CHAR(s.first_load_time, 'YYYY-MM-DD HH24:MI:SS'), '2000-01-01 00:00:00') AS first_load_time,
+                        NVL(TO_CHAR(s.last_active_time, 'YYYY-MM-DD HH24:MI:SS'), '2000-01-01 00:00:00') AS last_active_time,
+                        TO_NUMBER(NVL(s.elapsed_time, 0)) AS elapsed_time,
+                        TO_NUMBER(NVL(s.cpu_time, 0)) AS cpu_time,
+                        TO_NUMBER(NVL(s.buffer_gets, 0)) AS buffer_gets,
+                        TO_NUMBER(NVL(s.disk_reads, 0)) AS disk_reads,
+                        TO_NUMBER(NVL(s.executions, 0)) AS executions,
+                        TO_NUMBER(
+                            CASE 
+                                WHEN NVL(s.executions, 0) > 0 
+                                THEN ROUND(NVL(s.elapsed_time, 0) / s.executions) 
+                                ELSE 0 
+                            END
+                        ) AS avg_elapsed_time
+                    FROM v$sql s
+                    WHERE 
+                        s.sql_id IN (
+                            SELECT sql_id 
+                            FROM v$session 
+                            WHERE sid = :sessionId
+                            AND sql_id IS NOT NULL
+                        )
+                    ORDER BY NVL(s.last_active_time, SYSDATE-365) DESC
+                )
+                WHERE ROWNUM <= 50";
+            
+            using var connection = GetConnection();
+            await connection.OpenAsync();
+            
+            using var command = new OracleCommand(query, connection);
+            command.CommandTimeout = _config.CommandTimeout;
+            command.Parameters.Add("sessionId", OracleDbType.Int32).Value = sessionId;
+            
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var history = new SessionSqlHistory
+                {
+                    SqlId = reader.IsDBNull(reader.GetOrdinal("sql_id")) ? null : reader.GetString(reader.GetOrdinal("sql_id")),
+                    SqlText = reader.IsDBNull(reader.GetOrdinal("sql_text")) ? null : reader.GetString(reader.GetOrdinal("sql_text")),
+                    Module = reader.IsDBNull(reader.GetOrdinal("module")) ? null : reader.GetString(reader.GetOrdinal("module")),
+                    FirstLoadTime = reader.IsDBNull(reader.GetOrdinal("first_load_time")) 
+                        ? DateTime.Now 
+                        : DateTime.ParseExact(reader.GetString(reader.GetOrdinal("first_load_time")), 
+                            "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture),
+                    ElapsedTime = reader.IsDBNull(reader.GetOrdinal("elapsed_time")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("elapsed_time"))),
+                    CpuTime = reader.IsDBNull(reader.GetOrdinal("cpu_time")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("cpu_time"))),
+                    BufferGets = reader.IsDBNull(reader.GetOrdinal("buffer_gets")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("buffer_gets"))),
+                    DiskReads = reader.IsDBNull(reader.GetOrdinal("disk_reads")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("disk_reads"))),
+                    Executions = reader.IsDBNull(reader.GetOrdinal("executions")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("executions"))),
+                    AvgElapsedTime = reader.IsDBNull(reader.GetOrdinal("avg_elapsed_time")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("avg_elapsed_time")))
+                };
+                
+                if (!reader.IsDBNull(reader.GetOrdinal("last_active_time")))
+                {
+                    history.LastActiveTime = DateTime.ParseExact(reader.GetString(reader.GetOrdinal("last_active_time")), 
+                        "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+                }
+                
+                sqlHistory.Add(history);
+            }
+            
+            }
+            catch (OracleException ex)
+            {
+                // Si falla la consulta principal, intentar una consulta más simple
+                if (ex.Number == 942) // Table or view does not exist
+                {
+                    // Retornar lista vacía si no se puede acceder a las vistas
+                    return sqlHistory;
+                }
+                throw;
+            }
+            
+            return sqlHistory;
+        }
+        
+        public async Task<List<SessionEventHistory>> GetSessionEventHistoryAsync(int sessionId)
+        {
+            var eventHistory = new List<SessionEventHistory>();
+            
+            try
+            {
+                const string query = @"
+                SELECT * FROM (
+                    SELECT 
+                        e.event AS event_name,
+                        e.wait_class,
+                        CASE 
+                            WHEN e.total_waits > 9999999999 THEN 9999999999
+                            ELSE NVL(e.total_waits, 0)
+                        END AS total_waits,
+                        CASE 
+                            WHEN e.time_waited / 100 > 999999999 THEN 999999999
+                            ELSE NVL(e.time_waited / 100, 0)
+                        END AS time_waited_seconds,
+                        CASE 
+                            WHEN e.total_waits > 0 AND (e.time_waited * 10) / e.total_waits > 999999 THEN 999999
+                            WHEN e.total_waits > 0 THEN (e.time_waited * 10) / e.total_waits
+                            ELSE 0 
+                        END AS average_wait_ms,
+                        CASE
+                            WHEN e.max_wait * 10 > 999999 THEN 999999
+                            ELSE NVL(e.max_wait * 10, 0)
+                        END AS max_wait_ms
+                    FROM v$session_event e
+                    WHERE e.sid = :sessionId
+                        AND e.wait_class != 'Idle'
+                    ORDER BY e.time_waited DESC
+                )
+                WHERE ROWNUM <= 50";
+            
+            using var connection = GetConnection();
+            await connection.OpenAsync();
+            
+            using var command = new OracleCommand(query, connection);
+            command.CommandTimeout = _config.CommandTimeout;
+            command.Parameters.Add("sessionId", OracleDbType.Int32).Value = sessionId;
+            
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                try
+                {
+                    var history = new SessionEventHistory
+                    {
+                        EventName = reader.IsDBNull(reader.GetOrdinal("event_name")) ? "Unknown" : reader.GetString(reader.GetOrdinal("event_name")),
+                        WaitClass = reader.IsDBNull(reader.GetOrdinal("wait_class")) ? "Unknown" : reader.GetString(reader.GetOrdinal("wait_class"))
+                    };
+                    
+                    // Manejo seguro de valores numéricos grandes
+                    try
+                    {
+                        history.TotalWaits = reader.IsDBNull(reader.GetOrdinal("total_waits")) 
+                            ? 0 
+                            : Convert.ToInt64(reader.GetValue(reader.GetOrdinal("total_waits")));
+                    }
+                    catch { history.TotalWaits = long.MaxValue; }
+                    
+                    try
+                    {
+                        var timeWaited = reader.GetValue(reader.GetOrdinal("time_waited_seconds"));
+                        if (timeWaited != DBNull.Value)
+                        {
+                            var decimalValue = Convert.ToDecimal(timeWaited);
+                            history.TimeWaitedSeconds = decimalValue > 999999999 ? 999999999 : decimalValue;
+                        }
+                        else
+                        {
+                            history.TimeWaitedSeconds = 0;
+                        }
+                    }
+                    catch { history.TimeWaitedSeconds = 999999999; }
+                    
+                    try
+                    {
+                        var avgWait = reader.GetValue(reader.GetOrdinal("average_wait_ms"));
+                        if (avgWait != DBNull.Value)
+                        {
+                            var decimalValue = Convert.ToDecimal(avgWait);
+                            history.AverageWaitMs = decimalValue > 999999 ? 999999 : decimalValue;
+                        }
+                        else
+                        {
+                            history.AverageWaitMs = 0;
+                        }
+                    }
+                    catch { history.AverageWaitMs = 999999; }
+                    
+                    try
+                    {
+                        var maxWait = reader.GetValue(reader.GetOrdinal("max_wait_ms"));
+                        if (maxWait != DBNull.Value)
+                        {
+                            var decimalValue = Convert.ToDecimal(maxWait);
+                            history.MaxWaitMs = decimalValue > 999999 ? 999999 : decimalValue;
+                        }
+                        else
+                        {
+                            history.MaxWaitMs = 0;
+                        }
+                    }
+                    catch { history.MaxWaitMs = 999999; }
+                    
+                    eventHistory.Add(history);
+                }
+                catch (Exception ex)
+                {
+                    // Log del error pero continuar con el siguiente registro
+                    // Solo loguear si es un error específico, no genérico
+                }
+            }
+            
+            }
+            catch (OracleException ex)
+            {
+                // Si falla la consulta, retornar lista vacía
+                if (ex.Number == 942) // Table or view does not exist
+                {
+                    return eventHistory;
+                }
+                throw;
+            }
+            
+            return eventHistory;
         }
     }
 }

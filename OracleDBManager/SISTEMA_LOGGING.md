@@ -12,9 +12,9 @@ Los logs se almacenan en la carpeta `Logs/` con la siguiente estructura:
 ### 1. **Intento de Conexión**
 ```
 === INTENTO DE CONEXIÓN A ORACLE ===
-Timestamp: 2024-08-16 10:30:45.123
+Timestamp: 2025-08-16 10:30:45.123
 Usuario Windows: DOMINIO\usuario
-IP Cliente: 192.168.1.100
+Información del Cliente: Usuario: DOMINIO\usuario, Máquina: PC-USUARIO, IP Local: 192.168.1.100, IP Pública: 201.123.45.67, MAC: A0:B1:C2:D3:E4:F5, Interfaz: Ethernet
 --- Parámetros de Conexión ---
 Host: 192.168.0.159
 Puerto: 1521
@@ -26,9 +26,9 @@ Connection String: (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=192.168.0.159)(PORT
 ### 2. **Conexión Exitosa**
 ```
 === CONEXIÓN EXITOSA ===
-Timestamp: 2024-08-16 10:30:47.456
+Timestamp: 2025-08-16 10:30:47.456
 Usuario Windows: DOMINIO\usuario
-IP Cliente: 192.168.1.100
+Información del Cliente: Usuario: DOMINIO\usuario, Máquina: PC-USUARIO, IP Local: 192.168.1.100, IP Pública: 201.123.45.67, MAC: A0:B1:C2:D3:E4:F5, Interfaz: Ethernet
 Servidor: 192.168.0.159:1521
 Servicio: hades
 Usuario Oracle: jarch
@@ -37,9 +37,9 @@ Usuario Oracle: jarch
 ### 3. **Error de Conexión Detallado**
 ```
 === ERROR DE CONEXIÓN A ORACLE ===
-Timestamp: 2024-08-16 10:30:47.456
+Timestamp: 2025-08-16 10:30:47.456
 Usuario Windows: DOMINIO\usuario
-IP Cliente: 192.168.1.100
+Información del Cliente: Usuario: DOMINIO\usuario, Máquina: PC-USUARIO, IP Local: 192.168.1.100, IP Pública: 201.123.45.67, MAC: A0:B1:C2:D3:E4:F5, Interfaz: Ethernet
 --- Parámetros de Conexión ---
 Host: 192.168.0.159
 Puerto: 1521

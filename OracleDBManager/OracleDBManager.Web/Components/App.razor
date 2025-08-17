@@ -29,6 +29,192 @@
             element.click();
             document.body.removeChild(element);
         }
+        
+        window.formatSql = function (sql) {
+            if (!sql) return sql;
+            
+            // Normalizar espacios y saltos de línea
+            let formatted = sql.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+            
+            // Palabras clave principales que inician nueva línea
+            const mainKeywords = [
+                'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY',
+                'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
+                'UNION', 'UNION ALL', 'MINUS', 'INTERSECT'
+            ];
+            
+            // Palabras clave de JOIN
+            const joinKeywords = [
+                'INNER JOIN', 'LEFT OUTER JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN',
+                'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'CROSS JOIN', 'JOIN'
+            ];
+            
+            // Reemplazar palabras clave principales
+            mainKeywords.forEach(keyword => {
+                const regex = new RegExp('\\s+' + keyword + '\\s+', 'gi');
+                formatted = formatted.replace(regex, '\n' + keyword + ' ');
+            });
+            
+            // Reemplazar JOINs
+            joinKeywords.forEach(keyword => {
+                const regex = new RegExp('\\s+' + keyword + '\\s+', 'gi');
+                formatted = formatted.replace(regex, '\n    ' + keyword + ' ');
+            });
+            
+            // Formatear ON después de JOIN
+            formatted = formatted.replace(/\s+ON\s+/gi, '\n        ON ');
+            
+            // Formatear SELECT con campos alineados
+            formatted = formatted.replace(/^SELECT\s+(.+?)(?=\nFROM)/gmi, function(match, fields) {
+                // Dividir campos por coma, considerando paréntesis
+                const fieldList = [];
+                let current = '';
+                let parenCount = 0;
+                
+                for (let i = 0; i < fields.length; i++) {
+                    const char = fields[i];
+                    if (char === '(') parenCount++;
+                    if (char === ')') parenCount--;
+                    
+                    if (char === ',' && parenCount === 0) {
+                        fieldList.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                if (current.trim()) fieldList.push(current.trim());
+                
+                // Formatear campos
+                let result = 'SELECT';
+                const maxFieldsPerLine = 4;
+                
+                fieldList.forEach((field, index) => {
+                    if (index === 0) {
+                        result += '\n    ' + field;
+                    } else if (index % maxFieldsPerLine === 0) {
+                        result += ',\n    ' + field;
+                    } else {
+                        result += ', ' + field;
+                    }
+                });
+                
+                return result;
+            });
+            
+            // Formatear WHERE con condiciones alineadas
+            formatted = formatted.replace(/\nWHERE\s+(.+?)(?=\n(?:GROUP BY|HAVING|ORDER BY|UNION|$))/gsi, function(match, conditions) {
+                let result = '\nWHERE';
+                
+                // Dividir por AND/OR manteniendo paréntesis
+                const parts = [];
+                let current = '';
+                let parenCount = 0;
+                const tokens = conditions.split(/\s+/);
+                
+                tokens.forEach((token, index) => {
+                    if (token.match(/^(AND|OR)$/i) && parenCount === 0) {
+                        if (current.trim()) parts.push({ type: 'condition', value: current.trim() });
+                        parts.push({ type: 'operator', value: token.toUpperCase() });
+                        current = '';
+                    } else {
+                        parenCount += (token.match(/\(/g) || []).length;
+                        parenCount -= (token.match(/\)/g) || []).length;
+                        current += (current ? ' ' : '') + token;
+                    }
+                });
+                if (current.trim()) parts.push({ type: 'condition', value: current.trim() });
+                
+                // Construir resultado formateado
+                parts.forEach((part, index) => {
+                    if (index === 0 && part.type === 'condition') {
+                        result += '\n    ' + part.value;
+                    } else if (part.type === 'operator') {
+                        result += '\n    ' + part.value + ' ';
+                    } else if (part.type === 'condition' && index > 0) {
+                        result += part.value;
+                    }
+                });
+                
+                return result;
+            });
+            
+            // Alinear comas en subconsultas
+            formatted = formatted.replace(/\(\s*SELECT/gi, '(\n    SELECT');
+            formatted = formatted.replace(/\)\s*AS\s+/gi, '\n) AS ');
+            
+            // Limpiar espacios múltiples y líneas vacías
+            formatted = formatted.replace(/ +/g, ' ');
+            formatted = formatted.replace(/\n\s*\n/g, '\n');
+            formatted = formatted.replace(/^\n+/, '');
+            formatted = formatted.replace(/\n+$/, '');
+            
+            // Asegurar espacios después de comas
+            formatted = formatted.replace(/,([^\s])/g, ', $1');
+            
+            // Aplicar resaltado de sintaxis
+            formatted = highlightSql(formatted);
+            
+            return formatted;
+        }
+        
+        function highlightSql(sql) {
+            // Palabras clave SQL
+            const keywords = [
+                'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY',
+                'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'JOIN', 'ON',
+                'AND', 'OR', 'NOT', 'IN', 'EXISTS', 'BETWEEN', 'LIKE', 'IS', 'NULL',
+                'UNION', 'ALL', 'AS', 'DISTINCT', 'TOP', 'LIMIT',
+                'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
+                'CREATE', 'ALTER', 'DROP', 'TABLE', 'INDEX', 'VIEW',
+                'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+                'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'HAVING'
+            ];
+            
+            // Funciones SQL comunes
+            const functions = [
+                'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'ROUND', 'SUBSTR', 'LENGTH',
+                'UPPER', 'LOWER', 'TRIM', 'LTRIM', 'RTRIM', 'REPLACE',
+                'TO_CHAR', 'TO_DATE', 'TO_NUMBER', 'NVL', 'DECODE', 'COALESCE',
+                'SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP'
+            ];
+            
+            // Operadores
+            const operators = ['=', '<>', '!=', '<', '>', '<=', '>=', '+', '-', '*', '/', '||'];
+            
+            let highlighted = sql;
+            
+            // Resaltar strings (entre comillas simples)
+            highlighted = highlighted.replace(/'[^']*'/g, '<span class="sql-string">$&</span>');
+            
+            // Resaltar números
+            highlighted = highlighted.replace(/\b\d+\.?\d*\b/g, '<span class="sql-number">$&</span>');
+            
+            // Resaltar comentarios
+            highlighted = highlighted.replace(/--[^\n]*/g, '<span class="sql-comment">$&</span>');
+            highlighted = highlighted.replace(/\/\*[\s\S]*?\*\//g, '<span class="sql-comment">$&</span>');
+            
+            // Resaltar funciones (antes de keywords para evitar conflictos)
+            functions.forEach(func => {
+                const regex = new RegExp('\\b' + func + '\\s*\\(', 'gi');
+                highlighted = highlighted.replace(regex, '<span class="sql-function">' + func + '</span>(');
+            });
+            
+            // Resaltar palabras clave
+            keywords.forEach(keyword => {
+                const regex = new RegExp('\\b' + keyword + '\\b', 'gi');
+                highlighted = highlighted.replace(regex, '<span class="sql-keyword">' + keyword + '</span>');
+            });
+            
+            // Resaltar operadores (con cuidado de no afectar tags HTML)
+            operators.forEach(op => {
+                const escapedOp = op.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp('(?![^<]*>)' + escapedOp, 'g');
+                highlighted = highlighted.replace(regex, '<span class="sql-operator">$&</span>');
+            });
+            
+            return highlighted;
+        }
     </script>
 </body>
 

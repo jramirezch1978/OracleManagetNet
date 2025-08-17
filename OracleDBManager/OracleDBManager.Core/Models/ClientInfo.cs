@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.NetworkInformation;
+using Microsoft.AspNetCore.Http;
 
 namespace OracleDBManager.Core.Models
 {
@@ -10,7 +11,7 @@ namespace OracleDBManager.Core.Models
         public string LocalIpV4 { get; set; } = "IP local desconocida";
         public string PublicIp { get; set; } = "IP pública desconocida";
         public string MacAddress { get; set; } = "MAC desconocida";
-        public string NetworkInterface { get; set; } = "Interfaz desconocida";
+        public string NetworkInterfaceName { get; set; } = "Interfaz desconocida";
         
         public static async Task<ClientInfo> GetClientInfoAsync(HttpContext? httpContext)
         {
@@ -27,7 +28,7 @@ namespace OracleDBManager.Core.Models
                 
                 // Obtener información de la interfaz de red
                 var (interfaceName, macAddress) = GetNetworkInterfaceInfo();
-                clientInfo.NetworkInterface = interfaceName;
+                clientInfo.NetworkInterfaceName = interfaceName;
                 clientInfo.MacAddress = macAddress;
                 
                 // Obtener IP pública (async)

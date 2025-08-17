@@ -115,15 +115,15 @@ namespace OracleDBManager.Services.Implementation
         
         public async Task<bool> TestDatabaseConnectionAsync()
         {
+            _logger.LogInformation("Probando conexión a la base de datos");
             try
             {
-                _logger.LogInformation("Probando conexión a la base de datos");
                 return await _lockRepository.TestConnectionAsync();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error al probar la conexión a la base de datos");
-                return false;
+                throw; // Propagar la excepción para que podamos ver el error real
             }
         }
         
@@ -139,6 +139,34 @@ namespace OracleDBManager.Services.Implementation
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error al obtener las sesiones");
+                throw;
+            }
+        }
+        
+        public async Task<List<SessionSqlHistory>> GetSessionSqlHistoryAsync(int sessionId, string? username)
+        {
+            try
+            {
+                _logger.LogInformation($"Obteniendo historial SQL para sesión {sessionId}, usuario: {username}");
+                return await _lockRepository.GetSessionSqlHistoryAsync(sessionId, username);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error al obtener historial SQL para sesión {sessionId}");
+                throw;
+            }
+        }
+        
+        public async Task<List<SessionEventHistory>> GetSessionEventHistoryAsync(int sessionId)
+        {
+            try
+            {
+                _logger.LogInformation($"Obteniendo historial de eventos para sesión {sessionId}");
+                return await _lockRepository.GetSessionEventHistoryAsync(sessionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error al obtener historial de eventos para sesión {sessionId}");
                 throw;
             }
         }

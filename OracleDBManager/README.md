@@ -19,7 +19,25 @@ Una aplicación web similar a Oracle Enterprise Manager para gestionar y monitor
 - Oracle Client o Oracle Instant Client
 - Acceso a base de datos Oracle con privilegios DBA
 
-## 🔧 Instalación
+## 🚀 Desarrollo
+
+### Ejecutar en Modo Desarrollo
+
+```powershell
+# Navegar al proyecto
+cd OracleDBManager
+
+# Compilar la solución
+dotnet build
+
+# Ejecutar la aplicación
+cd OracleDBManager.Web
+dotnet run --urls "http://localhost:5220"
+```
+
+La aplicación estará disponible en: http://localhost:5220
+
+## 🔧 Instalación en Producción
 
 ### 1. Preparar el Servidor
 
