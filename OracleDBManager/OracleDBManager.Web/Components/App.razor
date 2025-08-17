@@ -157,8 +157,36 @@
             
             return formatted;
         }
+        function renderFormattedSql(container, htmlContent) {
+            console.log('renderFormattedSql llamado con:', { container, htmlContent });
+            if (container) {
+                console.log('Container encontrado, estableciendo innerHTML');
+                
+                // Decodificar las entidades HTML que fueron escapadas
+                const decodedHtml = htmlContent
+                    .replace(/&lt;span/g, '<span')
+                    .replace(/&lt;\/span&gt;/g, '</span>')
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'");
+                
+                container.innerHTML = decodedHtml;
+                console.log('innerHTML establecido. Contenido actual:', container.innerHTML);
+            } else {
+                console.log('Container no encontrado');
+            }
+        }
+        
+        function getSqlContainers() {
+            return Array.from(document.querySelectorAll('.sql-formatted'));
+        }
         
         function highlightSql(sql) {
+            // 1) Escapar HTML primero para evitar que el resaltado rompa etiquetas
+            let highlighted = String(sql)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
             // Palabras clave SQL
             const keywords = [
                 'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY',
@@ -170,7 +198,7 @@
                 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
                 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'HAVING'
             ];
-            
+
             // Funciones SQL comunes
             const functions = [
                 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'ROUND', 'SUBSTR', 'LENGTH',
@@ -178,41 +206,31 @@
                 'TO_CHAR', 'TO_DATE', 'TO_NUMBER', 'NVL', 'DECODE', 'COALESCE',
                 'SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP'
             ];
-            
-            // Operadores
-            const operators = ['=', '<>', '!=', '<', '>', '<=', '>=', '+', '-', '*', '/', '||'];
-            
-            let highlighted = sql;
-            
-            // Resaltar strings (entre comillas simples)
+
+            // 2) Operadores (sobre texto ya escapado)
+            highlighted = highlighted
+                .replace(/&lt;=?/g, '<span class="sql-operator">$&</span>')
+                .replace(/&gt;=?/g, '<span class="sql-operator">$&</span>')
+                .replace(/<>|!=|=|\+|-|\*|\/|\|\|/g, '<span class="sql-operator">$&</span>');
+
+            // 3) Strings, números y comentarios
             highlighted = highlighted.replace(/'[^']*'/g, '<span class="sql-string">$&</span>');
-            
-            // Resaltar números
             highlighted = highlighted.replace(/\b\d+\.?\d*\b/g, '<span class="sql-number">$&</span>');
-            
-            // Resaltar comentarios
             highlighted = highlighted.replace(/--[^\n]*/g, '<span class="sql-comment">$&</span>');
             highlighted = highlighted.replace(/\/\*[\s\S]*?\*\//g, '<span class="sql-comment">$&</span>');
-            
-            // Resaltar funciones (antes de keywords para evitar conflictos)
+
+            // 4) Funciones (antes de keywords para evitar conflictos)
             functions.forEach(func => {
                 const regex = new RegExp('\\b' + func + '\\s*\\(', 'gi');
                 highlighted = highlighted.replace(regex, '<span class="sql-function">' + func + '</span>(');
             });
-            
-            // Resaltar palabras clave
+
+            // 5) Palabras clave
             keywords.forEach(keyword => {
                 const regex = new RegExp('\\b' + keyword + '\\b', 'gi');
                 highlighted = highlighted.replace(regex, '<span class="sql-keyword">' + keyword + '</span>');
             });
-            
-            // Resaltar operadores (con cuidado de no afectar tags HTML)
-            operators.forEach(op => {
-                const escapedOp = op.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const regex = new RegExp('(?![^<]*>)' + escapedOp, 'g');
-                highlighted = highlighted.replace(regex, '<span class="sql-operator">$&</span>');
-            });
-            
+
             return highlighted;
         }
     </script>

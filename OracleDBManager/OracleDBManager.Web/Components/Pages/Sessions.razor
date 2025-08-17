@@ -262,7 +262,7 @@ else
                     {
                         <h4>SQL Actual</h4>
                         <div class="sql-container">
-                            <pre class="bg-light p-3 rounded">@((MarkupString)selectedSessionDetail.SqlText)</pre>
+                            <div class="sql-formatted" @ref="sqlContainerRef"></div>
                         </div>
                     }
                 </div>
@@ -306,12 +306,11 @@ else
                                         <td>@sql.Module</td>
                                         <td>@((sql.ElapsedTime / 1000).ToString("N0")) ms</td>
                                         <td>
-                                            <details>
-                                                <summary style="cursor: pointer;">Ver SQL</summary>
-                                                <div class="sql-container mt-2">
-                                                    <pre class="bg-light p-2 rounded">@((MarkupString)(sql.SqlText ?? ""))</pre>
-                                                </div>
-                                            </details>
+                                            <button class="oracle-button oracle-button-sm" 
+                                                    @onclick="async () => await ShowSqlDetail(sql.SqlId, sql.Module, sql.SqlText)"
+                                                    @onclick:stopPropagation="true">
+                                                <i class="fas fa-code"></i> Ver SQL
+                                            </button>
                                         </td>
                                     </tr>
                                 }
@@ -363,6 +362,47 @@ else
     </div>
 }
 
+@* Modal de detalle SQL *@
+@if (showSqlDetail && !string.IsNullOrEmpty(selectedSqlText))
+{
+    <div class="oracle-modal" style="z-index: 1060;" @onclick="CloseSqlDetail" @onclick:stopPropagation="true">
+        <div class="oracle-modal-content" style="max-width: 1000px;" @onclick:stopPropagation="true">
+            <div class="oracle-modal-header">
+                <i class="fas fa-code"></i> Detalle de Consulta SQL
+                @if (!string.IsNullOrEmpty(selectedSqlId))
+                {
+                    <span class="ms-3 text-muted">SQL ID: @selectedSqlId</span>
+                }
+                @if (!string.IsNullOrEmpty(selectedSqlModule))
+                {
+                    <span class="ms-3 text-muted">Módulo: @selectedSqlModule</span>
+                }
+            </div>
+            <div class="oracle-modal-body">
+                <div class="sql-detail-container">
+                    @* Barra de herramientas *@
+                    <div class="sql-toolbar mb-2">
+                        <button class="oracle-button oracle-button-sm" @onclick="CopySqlToClipboard">
+                            <i class="fas fa-copy"></i> Copiar SQL
+                        </button>
+                        <button class="oracle-button oracle-button-sm" @onclick="DownloadSql">
+                            <i class="fas fa-download"></i> Descargar
+                        </button>
+                    </div>
+                    
+                    @* Contenedor del SQL formateado *@
+                    <div class="sql-container" style="max-height: 500px; overflow-y: auto;">
+                        <div class="sql-formatted" @ref="sqlDetailContainerRef"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="oracle-modal-footer">
+                <button class="oracle-button" @onclick="CloseSqlDetail">Cerrar</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<SessionInfo> allSessions = new();
     private List<SessionInfo> filteredSessions = new();
@@ -371,6 +411,14 @@ else
     private SessionInfo? sessionHistoryDetail;
     private List<SessionSqlHistory>? sessionSqlHistory;
     private List<SessionEventHistory>? sessionEventHistory;
+    private ElementReference sqlContainerRef;
+    private ElementReference sqlDetailContainerRef;
+    
+    // Variables para el modal de SQL
+    private bool showSqlDetail = false;
+    private string? selectedSqlText = null;
+    private string? selectedSqlId = null;
+    private string? selectedSqlModule = null;
     
     private string selectedStatus = "all";
     private string userFilter = "";
@@ -570,25 +618,28 @@ else
             
             selectedSessionDetail = await LockService.GetSessionDetailAsync(sessionId);
             
-            // Formatear el SQL si existe
+            showSessionDetail = true;
+            StateHasChanged();
+            
+            // Formatear y renderizar el SQL si existe
             if (!string.IsNullOrEmpty(selectedSessionDetail.SqlText))
             {
                 try
                 {
+                    await Task.Delay(100); // Pequeña pausa para asegurar que el DOM esté listo
+                    
                     var formattedSql = await JSRuntime.InvokeAsync<string>("formatSql", selectedSessionDetail.SqlText);
                     if (!string.IsNullOrEmpty(formattedSql))
                     {
-                        selectedSessionDetail.SqlText = formattedSql;
+                        await JSRuntime.InvokeVoidAsync("renderFormattedSql", sqlContainerRef, formattedSql);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Si falla el formateo, mantener el SQL original
+                    // Si falla el formateo, mostrar SQL original
+                    await JSRuntime.InvokeVoidAsync("renderFormattedSql", sqlContainerRef, selectedSessionDetail.SqlText);
                 }
             }
-            
-            showSessionDetail = true;
-            StateHasChanged();
         }
         catch (Exception ex)
         {
@@ -616,29 +667,6 @@ else
             // Obtener historial SQL
             sessionSqlHistory = await LockService.GetSessionSqlHistoryAsync(sessionId, username);
             
-            // Formatear SQL en el historial
-            if (sessionSqlHistory != null && sessionSqlHistory.Any())
-            {
-                foreach (var sql in sessionSqlHistory)
-                {
-                    if (!string.IsNullOrEmpty(sql.SqlText))
-                    {
-                        try
-                        {
-                            var formattedSql = await JSRuntime.InvokeAsync<string>("formatSql", sql.SqlText);
-                            if (!string.IsNullOrEmpty(formattedSql))
-                            {
-                                sql.SqlText = formattedSql;
-                            }
-                        }
-                        catch
-                        {
-                            // Si falla el formateo, mantener el SQL original
-                        }
-                    }
-                }
-            }
-            
             // Obtener historial de eventos
             sessionEventHistory = await LockService.GetSessionEventHistoryAsync(sessionId);
             
@@ -663,6 +691,94 @@ else
         sessionHistoryDetail = null;
         sessionSqlHistory = null;
         sessionEventHistory = null;
+    }
+
+    private async Task ShowSqlDetail(string? sqlId, string? module, string? sqlText)
+    {
+        if (string.IsNullOrEmpty(sqlText))
+        {
+            errorMessage = "No hay SQL disponible para mostrar";
+            return;
+        }
+        
+        selectedSqlId = sqlId;
+        selectedSqlModule = module;
+        selectedSqlText = sqlText;
+        showSqlDetail = true;
+        
+        StateHasChanged();
+        
+        // Esperar a que el DOM esté listo
+        await Task.Delay(100);
+        
+        try
+        {
+            // Formatear y renderizar el SQL
+            var formattedSql = await JSRuntime.InvokeAsync<string>("formatSql", sqlText);
+            if (!string.IsNullOrEmpty(formattedSql))
+            {
+                await JSRuntime.InvokeVoidAsync("renderFormattedSql", sqlDetailContainerRef, formattedSql);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error al formatear SQL");
+            // Si falla el formateo, mostrar SQL sin formato
+            await JSRuntime.InvokeVoidAsync("renderFormattedSql", sqlDetailContainerRef, 
+                $"<pre>{System.Web.HttpUtility.HtmlEncode(sqlText)}</pre>");
+        }
+    }
+
+    private void CloseSqlDetail()
+    {
+        showSqlDetail = false;
+        selectedSqlText = null;
+        selectedSqlId = null;
+        selectedSqlModule = null;
+    }
+
+    private async Task CopySqlToClipboard()
+    {
+        if (!string.IsNullOrEmpty(selectedSqlText))
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", selectedSqlText);
+                successMessage = "SQL copiado al portapapeles";
+                
+                // Limpiar el mensaje después de 3 segundos
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(3000);
+                    await InvokeAsync(() =>
+                    {
+                        successMessage = null;
+                        StateHasChanged();
+                    });
+                });
+            }
+            catch
+            {
+                errorMessage = "No se pudo copiar el SQL";
+            }
+        }
+    }
+
+    private async Task DownloadSql()
+    {
+        if (!string.IsNullOrEmpty(selectedSqlText))
+        {
+            try
+            {
+                var fileName = $"sql_{selectedSqlId ?? "query"}_{DateTime.Now:yyyyMMdd_HHmmss}.sql";
+                await JSRuntime.InvokeVoidAsync("downloadFile", fileName, selectedSqlText);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error al descargar SQL");
+                errorMessage = "No se pudo descargar el archivo SQL";
+            }
+        }
     }
 
     private async Task ExportToExcel()

@@ -272,7 +272,7 @@ namespace OracleDBManager.Infrastructure.Repositories
                     p.spid AS os_process_id,
                     p.pga_used_mem,
                     p.pga_alloc_mem,
-                    sql.sql_text AS current_sql_text
+                    SUBSTR(sql.sql_fulltext, 1, 4000) AS current_sql_text
                 FROM 
                     v$session s
                     JOIN v$process p ON s.paddr = p.addr
@@ -333,7 +333,7 @@ namespace OracleDBManager.Infrastructure.Repositories
         {
             const string query = @"
                 SELECT 
-                    sql_text
+                    SUBSTR(sql_fulltext, 1, 4000) AS sql_text
                 FROM 
                     v$sql
                 WHERE 
@@ -468,33 +468,31 @@ namespace OracleDBManager.Infrastructure.Repositories
             return sessions;
         }
         
+        // En LockRepository.cs
         public async Task<List<SessionSqlHistory>> GetSessionSqlHistoryAsync(int sessionId, string? username)
         {
             var sqlHistory = new List<SessionSqlHistory>();
             
             try
             {
-                // Consulta simplificada compatible con Oracle 11g
+                // Query simplificada sin conversiones de fecha problemáticas
                 const string query = @"
                 SELECT * FROM (
                     SELECT 
                         s.sql_id,
                         SUBSTR(s.sql_fulltext, 1, 4000) AS sql_text,
                         NVL(s.module, 'N/A') AS module,
-                        NVL(TO_CHAR(s.first_load_time, 'YYYY-MM-DD HH24:MI:SS'), '2000-01-01 00:00:00') AS first_load_time,
-                        NVL(TO_CHAR(s.last_active_time, 'YYYY-MM-DD HH24:MI:SS'), '2000-01-01 00:00:00') AS last_active_time,
-                        TO_NUMBER(NVL(s.elapsed_time, 0)) AS elapsed_time,
-                        TO_NUMBER(NVL(s.cpu_time, 0)) AS cpu_time,
-                        TO_NUMBER(NVL(s.buffer_gets, 0)) AS buffer_gets,
-                        TO_NUMBER(NVL(s.disk_reads, 0)) AS disk_reads,
-                        TO_NUMBER(NVL(s.executions, 0)) AS executions,
-                        TO_NUMBER(
-                            CASE 
-                                WHEN NVL(s.executions, 0) > 0 
-                                THEN ROUND(NVL(s.elapsed_time, 0) / s.executions) 
-                                ELSE 0 
-                            END
-                        ) AS avg_elapsed_time
+                        SYSDATE AS first_load_time,
+                        SYSDATE AS last_active_time,
+                        NVL(s.elapsed_time, 0) AS elapsed_time,
+                        NVL(s.cpu_time, 0) AS cpu_time,
+                        NVL(s.buffer_gets, 0) AS buffer_gets,
+                        NVL(s.disk_reads, 0) AS disk_reads,
+                        NVL(s.executions, 0) AS executions,
+                        CASE 
+                            WHEN s.executions > 0 THEN ROUND(s.elapsed_time / s.executions)
+                            ELSE 0 
+                        END AS avg_elapsed_time
                     FROM v$sql s
                     WHERE 
                         s.sql_id IN (
@@ -502,57 +500,73 @@ namespace OracleDBManager.Infrastructure.Repositories
                             FROM v$session 
                             WHERE sid = :sessionId
                             AND sql_id IS NOT NULL
+                            
+                            UNION
+                            
+                            SELECT prev_sql_id
+                            FROM v$session
+                            WHERE sid = :sessionId
+                            AND prev_sql_id IS NOT NULL
                         )
-                    ORDER BY NVL(s.last_active_time, SYSDATE-365) DESC
+                    ORDER BY s.last_active_time DESC NULLS LAST
                 )
                 WHERE ROWNUM <= 50";
-            
-            using var connection = GetConnection();
-            await connection.OpenAsync();
-            
-            using var command = new OracleCommand(query, connection);
-            command.CommandTimeout = _config.CommandTimeout;
-            command.Parameters.Add("sessionId", OracleDbType.Int32).Value = sessionId;
-            
-            using var reader = await command.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-            {
-                var history = new SessionSqlHistory
-                {
-                    SqlId = reader.IsDBNull(reader.GetOrdinal("sql_id")) ? null : reader.GetString(reader.GetOrdinal("sql_id")),
-                    SqlText = reader.IsDBNull(reader.GetOrdinal("sql_text")) ? null : reader.GetString(reader.GetOrdinal("sql_text")),
-                    Module = reader.IsDBNull(reader.GetOrdinal("module")) ? null : reader.GetString(reader.GetOrdinal("module")),
-                    FirstLoadTime = reader.IsDBNull(reader.GetOrdinal("first_load_time")) 
-                        ? DateTime.Now 
-                        : DateTime.ParseExact(reader.GetString(reader.GetOrdinal("first_load_time")), 
-                            "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture),
-                    ElapsedTime = reader.IsDBNull(reader.GetOrdinal("elapsed_time")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("elapsed_time"))),
-                    CpuTime = reader.IsDBNull(reader.GetOrdinal("cpu_time")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("cpu_time"))),
-                    BufferGets = reader.IsDBNull(reader.GetOrdinal("buffer_gets")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("buffer_gets"))),
-                    DiskReads = reader.IsDBNull(reader.GetOrdinal("disk_reads")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("disk_reads"))),
-                    Executions = reader.IsDBNull(reader.GetOrdinal("executions")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("executions"))),
-                    AvgElapsedTime = reader.IsDBNull(reader.GetOrdinal("avg_elapsed_time")) ? 0 : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("avg_elapsed_time")))
-                };
                 
-                if (!reader.IsDBNull(reader.GetOrdinal("last_active_time")))
+                using var connection = GetConnection(); // Este método SÍ existe en el Repository
+                await connection.OpenAsync();
+                
+                using var command = new OracleCommand(query, connection);
+                command.CommandTimeout = _config.CommandTimeout; // _config SÍ existe en el Repository
+                command.Parameters.Add("sessionId", OracleDbType.Int32).Value = sessionId;
+                
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
                 {
-                    history.LastActiveTime = DateTime.ParseExact(reader.GetString(reader.GetOrdinal("last_active_time")), 
-                        "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+                    try
+                    {
+                        var history = new SessionSqlHistory
+                        {
+                            SqlId = reader.IsDBNull(reader.GetOrdinal("sql_id")) 
+                                ? null 
+                                : reader.GetString(reader.GetOrdinal("sql_id")),
+                            
+                            SqlText = reader.IsDBNull(reader.GetOrdinal("sql_text")) 
+                                ? null 
+                                : reader.GetString(reader.GetOrdinal("sql_text")),
+                            
+                            Module = reader.IsDBNull(reader.GetOrdinal("module")) 
+                                ? null 
+                                : reader.GetString(reader.GetOrdinal("module")),
+                            
+                            FirstLoadTime = reader.GetDateTime(reader.GetOrdinal("first_load_time")),
+                            LastActiveTime = reader.GetDateTime(reader.GetOrdinal("last_active_time")),
+                            
+                            ElapsedTime = Convert.ToDecimal(reader.GetDouble(reader.GetOrdinal("elapsed_time"))),
+                            CpuTime = Convert.ToDecimal(reader.GetDouble(reader.GetOrdinal("cpu_time"))),
+                            BufferGets = Convert.ToDecimal(reader.GetDouble(reader.GetOrdinal("buffer_gets"))),
+                            DiskReads = Convert.ToDecimal(reader.GetDouble(reader.GetOrdinal("disk_reads"))),
+                            Executions = Convert.ToDecimal(reader.GetDouble(reader.GetOrdinal("executions"))),
+                            AvgElapsedTime = Convert.ToDecimal(reader.GetDouble(reader.GetOrdinal("avg_elapsed_time")))
+                        };
+                        
+                        sqlHistory.Add(history);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error procesando fila de historial SQL: {ex.Message}");
+                        continue;
+                    }
                 }
-                
-                sqlHistory.Add(history);
-            }
-            
             }
             catch (OracleException ex)
             {
-                // Si falla la consulta principal, intentar una consulta más simple
-                if (ex.Number == 942) // Table or view does not exist
-                {
-                    // Retornar lista vacía si no se puede acceder a las vistas
-                    return sqlHistory;
-                }
-                throw;
+                Console.WriteLine($"Error Oracle en GetSessionSqlHistoryAsync: {ex.Number} - {ex.Message}");
+                return sqlHistory;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error general en GetSessionSqlHistoryAsync: {ex.Message}");
+                return sqlHistory;
             }
             
             return sqlHistory;
@@ -667,23 +681,22 @@ namespace OracleDBManager.Infrastructure.Repositories
                     
                     eventHistory.Add(history);
                 }
-                catch (Exception ex)
+                catch
                 {
                     // Log del error pero continuar con el siguiente registro
                     // Solo loguear si es un error específico, no genérico
                 }
             }
-            
-            }
-            catch (OracleException ex)
+        }
+        catch (OracleException ex)
+        {
+            // Si falla la consulta, retornar lista vacía
+            if (ex.Number == 942) // Table or view does not exist
             {
-                // Si falla la consulta, retornar lista vacía
-                if (ex.Number == 942) // Table or view does not exist
-                {
-                    return eventHistory;
-                }
-                throw;
+                return eventHistory;
             }
+            throw;
+        }
             
             return eventHistory;
         }

@@ -267,6 +267,23 @@
     position: relative;
 }
 
+.sql-formatted {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    background-color: #f8f9fa;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    white-space: pre;
+    overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 16px;
+    margin: 0;
+    color: #1f2937;
+    tab-size: 4;
+}
+
 .sql-container pre {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 14px;
@@ -367,5 +384,215 @@
     
     .detail-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+
+/* ========================================
+   AGREGAR AL FINAL DE oracle-em-style.css
+   ======================================== */
+
+/* Modal de SQL - z-index más alto para estar sobre el modal de historial */
+.oracle-modal[style*="z-index: 1060"] {
+    z-index: 1060 !important;
+}
+
+.oracle-modal[style*="z-index: 1060"] .oracle-modal-content {
+    z-index: 1061 !important;
+}
+
+/* Contenedor de detalles SQL */
+.sql-detail-container {
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    padding: 15px;
+}
+
+/* Barra de herramientas SQL */
+.sql-toolbar {
+    display: flex;
+    gap: 10px;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+/* Botón pequeño para la tabla */
+.oracle-button-sm {
+    background-color: var(--oracle-button-bg);
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    border-radius: 3px;
+    min-width: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.oracle-button-sm:hover {
+    background-color: var(--oracle-button-hover);
+}
+
+.oracle-button-sm:disabled {
+    background-color: #CCCCCC;
+    cursor: not-allowed;
+}
+
+/* Mejoras al contenedor SQL para el modal dedicado */
+.sql-detail-container .sql-container {
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 20px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    max-height: 500px;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+/* SQL formateado mejorado */
+.sql-detail-container .sql-formatted {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 0;
+    padding: 0;
+}
+
+/* Header del modal SQL con información adicional */
+.oracle-modal-header .text-muted {
+    font-size: 0.875rem;
+    font-weight: normal;
+    color: #6c757d !important;
+}
+
+/* Mejoras de resaltado de sintaxis para mejor visibilidad */
+.sql-detail-container .sql-keyword {
+    color: #0066cc;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.sql-detail-container .sql-function {
+    color: #795da3;
+    font-weight: bold;
+}
+
+.sql-detail-container .sql-string {
+    color: #d14;
+}
+
+.sql-detail-container .sql-number {
+    color: #099;
+}
+
+.sql-detail-container .sql-comment {
+    color: #998;
+    font-style: italic;
+}
+
+.sql-detail-container .sql-operator {
+    color: #333;
+    font-weight: bold;
+}
+
+/* Scrollbar personalizado para el contenedor SQL del modal */
+.sql-detail-container .sql-container::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.sql-detail-container .sql-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.sql-detail-container .sql-container::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.sql-detail-container .sql-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Estilo para cuando el SQL está en formato pre (sin formatear) */
+.sql-detail-container pre {
+    margin: 0;
+    background-color: transparent;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Animación de apertura del modal */
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.oracle-modal[style*="z-index: 1060"] .oracle-modal-content {
+    animation: modalFadeIn 0.2s ease-out;
+}
+
+/* Ajustes para la tabla de historial SQL */
+.oracle-table .oracle-button-sm {
+    margin: 0;
+}
+
+/* Icono en el botón Ver SQL */
+.oracle-button-sm i {
+    font-size: 0.875rem;
+}
+
+/* Mejora del espaciado en modales anidados */
+.oracle-modal + .oracle-modal {
+    backdrop-filter: blur(2px);
+}
+
+/* Responsive para el modal SQL */
+@media (max-width: 768px) {
+    .sql-detail-container .sql-container {
+        max-height: 300px;
+        font-size: 12px;
+    }
+    
+    .sql-toolbar {
+        flex-wrap: wrap;
+    }
+    
+    .oracle-button-sm {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+    }
+}
+
+/* Mensaje de éxito/error temporal */
+.alert {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }
