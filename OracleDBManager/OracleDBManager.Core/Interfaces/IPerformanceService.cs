@@ -1,0 +1,13 @@
+using OracleDBManager.Core.Models.Performance;
+
+namespace OracleDBManager.Core.Interfaces;
+
+public interface IPerformanceService
+{
+	Task<List<CpuPoint>> GetCpuUtilizationAsync(DateTime from, DateTime to);
+	Task<MemoryUsage> GetMemoryUsageAsync();
+	Task<List<TablespaceSize>> GetTablespacesAsync();
+	Task<List<DatafileSize>> GetDatafilesAsync();
+}
+
+

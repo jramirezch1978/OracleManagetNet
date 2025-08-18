@@ -55,6 +55,8 @@ builder.Services.AddSingleton(oracleConfig);
 // Registrar servicios
 builder.Services.AddScoped<ILockRepository, LockRepository>();
 builder.Services.AddScoped<ILockService, LockService>();
+builder.Services.AddScoped<IPerformanceRepository, PerformanceRepository>();
+builder.Services.AddScoped<IPerformanceService, PerformanceService>();
 builder.Services.AddScoped<IConnectionLogService, ConnectionLogService>();
 
 

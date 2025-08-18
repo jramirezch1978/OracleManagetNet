@@ -634,7 +634,7 @@ else
                         await JSRuntime.InvokeVoidAsync("renderFormattedSql", sqlContainerRef, formattedSql);
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
                     // Si falla el formateo, mostrar SQL original
                     await JSRuntime.InvokeVoidAsync("renderFormattedSql", sqlContainerRef, selectedSessionDetail.SqlText);

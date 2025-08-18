@@ -19,6 +19,20 @@
 <body>
     <Routes />
     <script src="_framework/blazor.web.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Verificar Chart.js al cargar
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('=== VERIFICACIÓN INICIAL DE CHART.JS ===');
+            console.log('Chart object available:', typeof Chart !== 'undefined');
+            if (typeof Chart !== 'undefined') {
+                console.log('Chart.js version:', Chart.version);
+            } else {
+                console.error('Chart.js NO está disponible!');
+            }
+            console.log('=====================================');
+        });
+    </script>
     <script>
         window.downloadFile = function (filename, content) {
             const element = document.createElement('a');
@@ -180,6 +194,195 @@
             return Array.from(document.querySelectorAll('.sql-formatted'));
         }
         
+        // ====== Charts ======
+        function renderCpuChart(labels, data) {
+            console.log('renderCpuChart llamado con:', { labels, data });
+            const ctx = document.getElementById('cpuChart');
+            if (!ctx) {
+                console.error('No se encontró el elemento cpuChart');
+                return;
+            }
+            
+            // Destruir gráfico existente si existe
+            if (window.cpuChartInstance) {
+                window.cpuChartInstance.destroy();
+                window.cpuChartInstance = null;
+            }
+            
+            console.log('Creando gráfico de CPU...');
+            window.cpuChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels.map(l => new Date(l).toLocaleTimeString()),
+                    datasets: [{
+                        label: 'CPU %',
+                        data: data,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13,110,253,0.2)',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    animation: false, // Desactivar animaciones para mejor rendimiento
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+            console.log('Gráfico de CPU creado exitosamente');
+        }
+
+        // Función para actualizar datos de CPU en tiempo real
+        function updateCpuChart(labels, data) {
+            if (window.cpuChartInstance) {
+                window.cpuChartInstance.data.labels = labels.map(l => new Date(l).toLocaleTimeString());
+                window.cpuChartInstance.data.datasets[0].data = data;
+                window.cpuChartInstance.update('none'); // Sin animación para mejor rendimiento
+            }
+        }
+
+        // Función para actualizar datos de memoria en tiempo real
+        function updateMemoryCharts(sgaUsed, pgaUsed, osUsed) {
+            if (window.memoryBarsInstance) {
+                window.memoryBarsInstance.data.datasets[0].data = [sgaUsed, pgaUsed, osUsed];
+                window.memoryBarsInstance.update('none');
+            }
+            if (window.memoryPieInstance) {
+                window.memoryPieInstance.data.datasets[0].data = [sgaUsed, pgaUsed, osUsed];
+                window.memoryPieInstance.update('none');
+            }
+        }
+
+        function renderMemoryCharts(sgaUsed, pgaUsed, sgaTotal, pgaTotal, osUsed, osTotal) {
+            console.log('renderMemoryCharts llamado con:', { sgaUsed, pgaUsed, sgaTotal, pgaTotal, osUsed, osTotal });
+            
+            const barCtx = document.getElementById('memoryBars');
+            console.log('memoryBars canvas:', barCtx);
+            if (barCtx) {
+                console.log('Creando gráfico de barras de memoria...');
+                // Destruir gráfico existente si existe
+                if (window.memoryBarsInstance) {
+                    window.memoryBarsInstance.destroy();
+                    window.memoryBarsInstance = null;
+                }
+                
+                window.memoryBarsInstance = new Chart(barCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['SGA Usada', 'PGA Usada', 'OS Usada'],
+                        datasets: [{
+                            label: 'MB',
+                            data: [sgaUsed, pgaUsed, osUsed],
+                            backgroundColor: ['#198754', '#20c997', '#6c757d']
+                        }]
+                    },
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false,
+                        animation: false, // Desactivar animaciones para mejor rendimiento
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+                console.log('Gráfico de barras de memoria creado exitosamente');
+            } else {
+                console.error('Canvas memoryBars no encontrado');
+            }
+            
+            const pieCtx = document.getElementById('memoryPie');
+            console.log('memoryPie canvas:', pieCtx);
+            if (pieCtx) {
+                console.log('Creando gráfico circular de memoria...');
+                // Destruir gráfico existente si existe
+                if (window.memoryPieInstance) {
+                    window.memoryPieInstance.destroy();
+                    window.memoryPieInstance = null;
+                }
+                
+                window.memoryPieInstance = new Chart(pieCtx, {
+                    type: 'pie',
+                    data: {
+                        labels: ['SGA', 'PGA', 'SO'],
+                        datasets: [{
+                            data: [sgaUsed, pgaUsed, osUsed],
+                            backgroundColor: ['#0d6efd', '#6610f2', '#6c757d']
+                        }]
+                    },
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false,
+                        animation: false, // Desactivar animaciones para mejor rendimiento
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    boxWidth: 12,
+                                    font: {
+                                        size: 10
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+                console.log('Gráfico circular de memoria creado exitosamente');
+            } else {
+                console.error('Canvas memoryPie no encontrado');
+            }
+        }
+
+        function renderBars(canvasId, labels, data) {
+            console.log(`renderBars llamado para ${canvasId} con:`, { labels, data });
+            const ctx = document.getElementById(canvasId);
+            if (!ctx) {
+                console.error(`No se encontró el elemento ${canvasId}`);
+                return;
+            }
+            
+            // Destruir gráfico existente si existe
+            if (window[canvasId + 'Instance']) {
+                window[canvasId + 'Instance'].destroy();
+            }
+            
+            console.log(`Creando gráfico de barras para ${canvasId}...`);
+            window[canvasId + 'Instance'] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'MB',
+                        data: data,
+                        backgroundColor: '#0dcaf0'
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    indexAxis: 'y',
+                    scales: {
+                        x: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+            console.log(`Gráfico de barras ${canvasId} creado exitosamente`);
+        }
+
         function highlightSql(sql) {
             // 1) Escapar HTML primero para evitar que el resaltado rompa etiquetas
             let highlighted = String(sql)
