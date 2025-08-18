@@ -93,6 +93,7 @@ else
 							<thead>
 								<tr>
 									<th>Nombre</th>
+									<th>Espacio Usado Asignado</th>
 									<th>Tamaño Asignado (MB)</th>
 									<th>Espacio Usado (MB)</th>
 									<th>Espacio Usado (%)</th>
@@ -108,8 +109,20 @@ else
 									{
 										var usedPercent = tablespace.TotalMb > 0 ? (tablespace.UsedMb / tablespace.TotalMb * 100) : 0;
 										var freeSpace = tablespace.TotalMb - tablespace.UsedMb;
+										
+										// Asegurar que el porcentaje esté entre 0 y 100
+										usedPercent = Math.Max(0, Math.Min(100, usedPercent));
+										
 										<tr>
 											<td><strong>@tablespace.Name</strong></td>
+											<td style="width: 200px;">
+												<div class="tablespace-progress-container">
+													<div class="tablespace-progress-bar">
+														<div class="tablespace-progress-fill" style="width: @(usedPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))%"></div>
+													</div>
+													<span class="tablespace-progress-text">@usedPercent.ToString("N1")%</span>
+												</div>
+											</td>
 											<td class="text-end">@tablespace.TotalMb.ToString("N1")</td>
 											<td class="text-end">@tablespace.UsedMb.ToString("N1")</td>
 											<td class="text-end">@usedPercent.ToString("N1")%</td>
@@ -124,6 +137,14 @@ else
 									<!-- Datos de ejemplo basados en tu captura -->
 									<tr>
 										<td><strong>BDTINKA</strong></td>
+										<td style="width: 200px;">
+											<div class="tablespace-progress-container">
+												<div class="tablespace-progress-bar">
+													<div class="tablespace-progress-fill" style="width: 80.9%"></div>
+												</div>
+												<span class="tablespace-progress-text">80.9%</span>
+											</div>
+										</td>
 										<td class="text-end">3,486.0</td>
 										<td class="text-end">2,820.5</td>
 										<td class="text-end">80.9%</td>
@@ -133,6 +154,14 @@ else
 									</tr>
 									<tr>
 										<td><strong>BLUEWAVE</strong></td>
+										<td style="width: 200px;">
+											<div class="tablespace-progress-container">
+												<div class="tablespace-progress-bar">
+													<div class="tablespace-progress-fill" style="width: 77.9%"></div>
+												</div>
+												<span class="tablespace-progress-text">77.9%</span>
+											</div>
+										</td>
 										<td class="text-end">5,565.0</td>
 										<td class="text-end">4,337.5</td>
 										<td class="text-end">77.9%</td>
@@ -142,6 +171,14 @@ else
 									</tr>
 									<tr>
 										<td><strong>FRANEVI</strong></td>
+										<td style="width: 200px;">
+											<div class="tablespace-progress-container">
+												<div class="tablespace-progress-bar">
+													<div class="tablespace-progress-fill" style="width: 78.1%"></div>
+												</div>
+												<span class="tablespace-progress-text">78.1%</span>
+											</div>
+										</td>
 										<td class="text-end">7,896.0</td>
 										<td class="text-end">6,170.5</td>
 										<td class="text-end">78.1%</td>
@@ -151,6 +188,14 @@ else
 									</tr>
 									<tr>
 										<td><strong>FREDERICK</strong></td>
+										<td style="width: 200px;">
+											<div class="tablespace-progress-container">
+												<div class="tablespace-progress-bar">
+													<div class="tablespace-progress-fill" style="width: 80.9%"></div>
+												</div>
+												<span class="tablespace-progress-text">80.9%</span>
+											</div>
+										</td>
 										<td class="text-end">5,716.0</td>
 										<td class="text-end">4,625.5</td>
 										<td class="text-end">80.9%</td>
@@ -160,6 +205,14 @@ else
 									</tr>
 									<tr>
 										<td><strong>IDEA_INGENIERIA</strong></td>
+										<td style="width: 200px;">
+											<div class="tablespace-progress-container">
+												<div class="tablespace-progress-bar">
+													<div class="tablespace-progress-fill" style="width: 0%"></div>
+												</div>
+												<span class="tablespace-progress-text">0%</span>
+											</div>
+										</td>
 										<td class="text-end">7,438.5</td>
 										<td class="text-end">-22,299.5</td>
 										<td class="text-end">-299.8%</td>
@@ -268,26 +321,33 @@ else
 
 	protected override async Task OnInitializedAsync()
 	{
-		loading = true;
 		try
 		{
 			// No usar JavaScript interop aquí - solo obtener datos
 			var to = DateTime.Now;
 			var from = to.AddMinutes(-60);
 			
+			Console.WriteLine("=== RAZOR: Iniciando obtención de datos ===");
 			cpu = await PerformanceService.GetCpuUtilizationAsync(from, to);
 			memory = await PerformanceService.GetMemoryUsageAsync();
 			tbs = await PerformanceService.GetTablespacesAsync();
 			dfs = await PerformanceService.GetDatafilesAsync();
+			
+			Console.WriteLine($"=== RAZOR RESULTADO: CPU={cpu.Count}, Memory={memory?.SgaTotalMb}MB, TBS={tbs.Count}, DFS={dfs.Count} ===");
 		}
 		catch (Exception ex)
 		{
+			Console.WriteLine($"=== RAZOR ERROR: {ex.Message} ===");
+			Console.WriteLine($"=== RAZOR STACKTRACE: {ex.StackTrace} ===");
 			error = ex.Message;
 		}
-		
-		// SIEMPRE poner loading = false para que se renderice el HTML
-		loading = false;
-		StateHasChanged(); // Forzar actualización de UI
+		finally
+		{
+			// SIEMPRE poner loading = false para que se renderice el HTML
+			loading = false;
+			Console.WriteLine("=== RAZOR: Loading establecido en FALSE ===");
+			StateHasChanged(); // Forzar actualización de UI
+		}
 	}
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
